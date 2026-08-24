@@ -71,6 +71,15 @@ export class BattleScene extends Phaser.Scene {
     for (const species of MONSTERS) {
       this.load.image(species.spriteKey, `/monsters/${species.spriteKey}.png`);
     }
+
+    // Hand-authored pixel tileset, bundled with the app (no external
+    // dependency): two grass variants + two worn-path variants for subtle
+    // non-repeating texture, and a sparse gear decal.
+    this.load.image('tile-grass-a', '/world/tiles/grass_a.png');
+    this.load.image('tile-grass-b', '/world/tiles/grass_b.png');
+    this.load.image('tile-path-a', '/world/tiles/path_a.png');
+    this.load.image('tile-path-b', '/world/tiles/path_b.png');
+    this.load.image('tile-decor-gear', '/world/tiles/decor_gear.png');
   }
 
   create() {
@@ -127,24 +136,23 @@ export class BattleScene extends Phaser.Scene {
   // -------------------------------------------------------------------
 
   private drawMap() {
-    const g = this.add.graphics();
     for (let r = 0; r < GRID.rows; r++) {
       for (let c = 0; c < GRID.cols; c++) {
         const onPath = PATH_SET.has(`${c},${r}`);
-        const checker = (r + c) % 2 === 0;
-        const color = onPath ? 0x6b4a2b : checker ? 0x1f3324 : 0x1a2b1f;
-        g.fillStyle(color, 1);
-        g.fillRect(c * GRID.cell, r * GRID.cell, GRID.cell, GRID.cell);
-        if (onPath) {
-          g.fillStyle(0x8a6a3f, 1);
-          g.fillCircle(c * GRID.cell + GRID.cell / 2, r * GRID.cell + GRID.cell / 2, 4);
-        } else if ((c * 7 + r * 13) % 11 === 0) {
-          // sparse gear decoration on grass tiles
-          g.lineStyle(2, 0x3a5a42, 0.6);
-          g.strokeCircle(c * GRID.cell + GRID.cell / 2, r * GRID.cell + GRID.cell / 2, 10);
+        const x = c * GRID.cell + GRID.cell / 2;
+        const y = r * GRID.cell + GRID.cell / 2;
+        const tileKey = onPath
+          ? (c + r) % 3 === 0 ? 'tile-path-a' : 'tile-path-b'
+          : (c + r) % 2 === 0 ? 'tile-grass-a' : 'tile-grass-b';
+        this.add.image(x, y, tileKey).setDisplaySize(GRID.cell, GRID.cell);
+        if (!onPath && (c * 7 + r * 13) % 11 === 0) {
+          // sparse gear decal on grass tiles
+          this.add.image(x, y, 'tile-decor-gear').setDisplaySize(GRID.cell, GRID.cell);
         }
       }
     }
+
+    const g = this.add.graphics();
     const spawn = pointAtDistance(0);
     const goal = pointAtDistance(PATH_LENGTH);
     g.fillStyle(0xb23b3b, 1);
