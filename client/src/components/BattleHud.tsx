@@ -3,6 +3,7 @@ import type { MonsterInstance, TargetingMode } from '@shared/types';
 import { MONSTERS_BY_ID } from '@shared/monsterData';
 import { EventBus } from '../battle/EventBus';
 import type { BattleHudState, BattleResultPayload, MonsterSelectedPayload } from '../battle/battleTypes';
+import { MonsterSprite } from './MonsterSprite';
 
 interface Props {
   team: MonsterInstance[];
@@ -108,7 +109,7 @@ export function BattleHud({ team, onBattleEnd }: Props) {
               onClick={() => selectForPlacement(m.instanceId)}
               title={placed ? `${species.name} (deployed)` : species.name}
             >
-              <span className="tray-icon" style={{ background: `${species.color}33` }}>{species.name[0]}</span>
+              <MonsterSprite species={species} size={28} />
               <span className="tray-name">{species.name}</span>
               <span className="tray-level">Lv.{m.level}</span>
             </button>

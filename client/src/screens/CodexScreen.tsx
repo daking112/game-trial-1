@@ -1,5 +1,6 @@
 import { MONSTERS } from '@shared/monsterData';
 import { useGameStore } from '../state/store';
+import { MonsterSprite } from '../components/MonsterSprite';
 
 export function CodexScreen() {
   const codex = useGameStore((s) => s.codex);
@@ -25,7 +26,7 @@ export function CodexScreen() {
             }
             return (
               <div key={species.id} className={`codex-card ${entry.captured ? 'captured' : ''}`} style={{ borderColor: species.color }}>
-                <div className="codex-icon" style={{ background: `${species.color}33` }}>{species.name[0]}</div>
+                <MonsterSprite species={species} size={44} />
                 <div className="codex-name">{species.name}</div>
                 <div className={`rarity-tag rarity-${species.rarity}`}>{species.element} &middot; {species.rarity}</div>
                 <p className="codex-desc">{species.description}</p>

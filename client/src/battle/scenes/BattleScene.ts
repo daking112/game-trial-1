@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { MonsterInstance, TargetingMode } from '@shared/types';
-import { MONSTERS_BY_ID } from '@shared/monsterData';
+import { MONSTERS, MONSTERS_BY_ID } from '@shared/monsterData';
 import { ENEMIES } from '@shared/enemyData';
 import { WAVES } from '@shared/waveData';
 import { computeDamage, computeEffectiveStats } from '../systems/combat';
@@ -60,6 +60,17 @@ export class BattleScene extends Phaser.Scene {
     this.crystals = 0;
     this.xpByInstance.clear();
     this.prepRemaining = PREP_MS;
+  }
+
+  preload() {
+    // Load real sprite art where it exists; species without art yet just
+    // never get a matching texture key, and createPlacedView() falls back
+    // to a colored circle + initial. A missing file logs one harmless
+    // console warning per species and the loader moves on.
+    this.load.on('loaderror', () => {});
+    for (const species of MONSTERS) {
+      this.load.image(species.spriteKey, `/monsters/${species.spriteKey}.png`);
+    }
   }
 
   create() {
@@ -200,19 +211,27 @@ export class BattleScene extends Phaser.Scene {
       targetingMode: 'first',
     };
     this.placed.set(runtime.runtimeId, runtime);
-    this.createPlacedView(runtime, species.color, species.name);
+    this.createPlacedView(runtime, species);
     this.selectedForPlacementId = null;
     EventBus.emit('monster-placed', instanceId);
   }
 
-  private createPlacedView(m: PlacedMonsterRuntime, colorHex: string, name: string) {
-    const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+  private createPlacedView(m: PlacedMonsterRuntime, species: { color: string; name: string; spriteKey: string }) {
     const container = this.add.container(m.x, m.y);
-    const circle = this.add.circle(0, 0, 18, color).setStrokeStyle(2, 0x000000, 0.4);
-    const label = this.add.text(0, 0, name[0], { fontSize: '16px', color: '#0a1014', fontStyle: 'bold' }).setOrigin(0.5);
+
+    if (this.textures.exists(species.spriteKey)) {
+      const sprite = this.add.image(0, 0, species.spriteKey).setDisplaySize(40, 40);
+      container.add(sprite);
+    } else {
+      const color = Phaser.Display.Color.HexStringToColor(species.color).color;
+      const circle = this.add.circle(0, 0, 18, color).setStrokeStyle(2, 0x000000, 0.4);
+      const label = this.add.text(0, 0, species.name[0], { fontSize: '16px', color: '#0a1014', fontStyle: 'bold' }).setOrigin(0.5);
+      container.add([circle, label]);
+    }
+
     const ultBg = this.add.rectangle(0, 26, 30, 4, 0x000000, 0.5);
     const ultFg = this.add.rectangle(-15, 26, 0, 4, 0xd99bff).setOrigin(0, 0.5);
-    container.add([circle, label, ultBg, ultFg]);
+    container.add([ultBg, ultFg]);
     container.setData('ultFg', ultFg);
     this.placedViews.set(m.runtimeId, container);
   }

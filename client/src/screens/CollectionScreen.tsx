@@ -4,6 +4,7 @@ import { TRAITS, xpToNextLevel } from '@shared/constants';
 import { computeEffectiveStats } from '../battle/systems/combat';
 import { useGameStore } from '../state/store';
 import { MonsterCard } from '../components/MonsterCard';
+import { MonsterSprite } from '../components/MonsterSprite';
 
 export function CollectionScreen() {
   const collection = useGameStore((s) => s.collection);
@@ -33,6 +34,7 @@ export function CollectionScreen() {
           <p className="panel-hint">Select a monster to view its details.</p>
         ) : (
           <>
+            <div className="detail-hero"><MonsterSprite species={species} size={96} /></div>
             <h2>{selected.evolved && species.evolution ? species.evolution.intoName : species.name}</h2>
             <div className={`rarity-tag rarity-${species.rarity}`}>{species.element.toUpperCase()} &middot; {species.rarity}</div>
             <p className="blurb">{species.description}</p>

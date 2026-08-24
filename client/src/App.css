@@ -122,6 +122,22 @@ button {
 .monster-card-name { font-weight: 700; font-size: 13px; }
 .monster-card-level { font-size: 11px; color: var(--text-dim); }
 
+.sprite-img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  flex: none;
+}
+.sprite-fallback {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  border: 2px solid rgba(255,255,255,0.15);
+  flex: none;
+}
+
 .rarity-tag {
   font-size: 10px;
   font-weight: 700;
@@ -148,6 +164,7 @@ button {
 }
 .stat-row b { color: var(--text); }
 .detail-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.detail-hero { display: flex; justify-content: center; margin-bottom: 8px; }
 
 /* Codex */
 .codex-panel { flex: 1; }

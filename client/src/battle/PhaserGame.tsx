@@ -25,7 +25,7 @@ export function PhaserGame({ team, runToken }: Props) {
       parent: containerRef.current,
       backgroundColor: '#152018',
       scene: [BattleScene],
-      render: { antialias: true },
+      pixelArt: true,
     });
     gameRef.current = game;
 

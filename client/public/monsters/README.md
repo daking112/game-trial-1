@@ -1,14 +1,20 @@
-# Monster portrait art
+# Monster sprite art
 
-Drop generated/final portrait art here as `<spriteKey>.png`, matching each
-species' `spriteKey` in `/shared/monsterData.ts` (e.g. `cogling.png`,
-`boilerback.png`, ... `aetherwing.png`).
+Drop each species' idle sprite here as `<spriteKey>.png`, matching the
+`spriteKey` in `/shared/monsterData.ts` (e.g. `cogling.png`,
+`boilerback.png`, ... `aetherwing.png`). It's picked up automatically —
+`BattleScene.preload()` loads a texture per species and `MonsterSprite.tsx`
+renders it everywhere in the UI; a species without a file here just falls
+back to a colored circle + initial, no code changes needed either way.
 
-Concept art for all 10 species (steampunk-fantasy hybrid: brass, copper,
-gears, and steam fused with an organic forest-animal base) was generated via
-the Artlist MCP in an earlier session, but that session's network egress
-policy blocked downloading the resulting files into this repo. Regenerate or
-re-download them into this folder, then wire them into
-`client/src/battle/scenes/BattleScene.ts` (`createPlacedView`) and the React
-`MonsterCard`/`CollectionScreen`/`CodexScreen`/`CaptureModal` components,
-which currently render a colored circle + initial as a placeholder.
+**Format that already works well**: 32×32 (or similar) top-down pixel art
+with a transparent background, one "facing the camera" idle frame — see
+`cogling.png` for a working example. `cogling/` holds the full 8-directional
+rotation set (`north.png`, `north-east.png`, ... ) for the same sprite, kept
+for future use (e.g. facing the sprite toward its current target) but not
+wired up yet — only the single front-facing frame is used today.
+
+Larger illustrated portraits also work fine (`MonsterSprite` just renders
+whatever image is at the path, scaled down), but the small transparent
+top-down style reads best both in the battle grid and scaled up in the
+Collection/Codex/Capture UI.

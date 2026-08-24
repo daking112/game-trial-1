@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { MonsterDefinition } from '@shared/types';
 import { RARITY_CONFIG } from '@shared/constants';
 import { useGameStore } from '../state/store';
+import { MonsterSprite } from './MonsterSprite';
 
 interface Props {
   species: MonsterDefinition;
@@ -25,7 +26,7 @@ export function CaptureModal({ species, onClose }: Props) {
     <div className="overlay">
       <div className="overlay-card capture-card">
         <div className="capture-icon" style={{ borderColor: species.color, background: `${species.color}22` }}>
-          {species.name[0]}
+          <MonsterSprite species={species} size={64} />
         </div>
         <h2>WILD MONSTER DEFEATED</h2>
         <div className="capture-name">{species.name}</div>
