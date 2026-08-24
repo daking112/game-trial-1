@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wardens of Everglen</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="menu-screen" class="overlay">
+  <div class="overlay-card">
+    <h1>Wardens of Everglen</h1>
+    <p class="subtitle">A Monster-Collecting Tower Defense</p>
+    <p class="blurb">Capture wild wardens roaming the Everglen path, then summon them as towers to defend the
+      Hearthstone from the encroaching Blight. Clear waves to earn gold and capture orbs, grow your
+      collection, and hold the line as long as you can.</p>
+    <button id="btn-start" class="btn btn-primary">Start Game</button>
+    <button id="btn-continue" class="btn btn-secondary" style="display:none;">Continue Saved Game</button>
+    <p class="hint">Your progress auto-saves in this browser.</p>
+  </div>
+</div>
+
+<div id="game-over-screen" class="overlay" style="display:none;">
+  <div class="overlay-card">
+    <h1>The Hearthstone Has Fallen</h1>
+    <p class="blurb">You survived <span id="final-wave">0</span> waves and captured <span id="final-species">0</span> warden species.</p>
+    <button id="btn-restart" class="btn btn-primary">Start a New Game</button>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
+  <header id="hud">
+    <div class="hud-title">Wardens of Everglen</div>
+    <div class="hud-stats">
+      <div class="stat" title="Gold"><span class="stat-icon">🪙</span><span id="stat-gold">0</span></div>
+      <div class="stat" title="Capture Orbs"><span class="stat-icon">🔮</span><span id="stat-orbs">0</span></div>
+      <div class="stat" title="Hearthstone Lives"><span class="stat-icon">❤️</span><span id="stat-lives">0</span></div>
+      <div class="stat" title="Wave"><span class="stat-icon">🌊</span><span id="stat-wave">1</span></div>
+    </div>
+    <div class="hud-actions">
+      <button id="btn-speed" class="btn btn-small">1x Speed</button>
+      <button id="btn-wave" class="btn btn-small btn-primary">Start Wave</button>
+    </div>
+  </header>
+
+  <main id="game-main">
+    <div id="canvas-wrap">
+      <canvas id="game-canvas" width="720" height="432"></canvas>
+      <div id="toast-layer"></div>
+    </div>
+
+    <aside id="sidebar">
+      <div class="panel" id="roster-panel">
+        <h2>Warden Roster</h2>
+        <p class="panel-hint">Select a warden, then click an open tile on the map to summon it.</p>
+        <div id="roster-list"></div>
+      </div>
+
+      <div class="panel" id="selection-panel" style="display:none;">
+        <h2 id="sel-name">--</h2>
+        <div id="sel-body"></div>
+      </div>
+
+      <div class="panel" id="log-panel">
+        <h2>Log</h2>
+        <div id="log-list"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div id="capture-modal" class="overlay" style="display:none;"></div>
+
+<script src="js/data.js"></script>
+<script src="js/capture.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
