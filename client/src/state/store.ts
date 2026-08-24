@@ -1,152 +1,132 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CodexEntry, MonsterInstance, TraitId } from '@shared/types';
-import { MONSTERS, MONSTERS_BY_ID } from '@shared/monsterData';
-import { RARITY_CONFIG, STARTING_CRYSTALS, STARTING_GOLD, TRAIT_IDS, xpToNextLevel, MAX_LEVEL } from '@shared/constants';
+import type { CollectionEntry, PullResult, Rarity, RunResult } from '@shared/types';
+import { MONSTERS, MONSTERS_BY_ID, STARTER_SPECIES_ID } from '@shared/monsterData';
+import {
+  MAX_STARS,
+  PITY_PULLS_FOR_GUARANTEED_EPIC,
+  PULL_COST_SINGLE,
+  PULL_COST_TEN,
+  RARITY_CONFIG,
+  RARITY_ORDER,
+  STARTING_GEARS,
+} from '@shared/constants';
 
-function rollTrait(): TraitId {
-  return TRAIT_IDS[Math.floor(Math.random() * TRAIT_IDS.length)];
+function weightedRarity(guaranteedEpicPlus: boolean): Rarity {
+  const pool = guaranteedEpicPlus ? (['epic', 'legendary'] as Rarity[]) : RARITY_ORDER;
+  const total = pool.reduce((sum, r) => sum + RARITY_CONFIG[r].weight, 0);
+  let roll = Math.random() * total;
+  for (const rarity of pool) {
+    roll -= RARITY_CONFIG[rarity].weight;
+    if (roll <= 0) return rarity;
+  }
+  return pool[pool.length - 1];
 }
 
-function makeInstance(speciesId: string, level = 1): MonsterInstance {
-  return {
-    instanceId: crypto.randomUUID(),
-    speciesId,
-    nickname: null,
-    level,
-    xp: 0,
-    traitId: rollTrait(),
-    evolved: false,
-    capturedAt: Date.now(),
-  };
-}
-
-function emptyCodex(): Record<string, CodexEntry> {
-  return Object.fromEntries(
-    MONSTERS.map((m) => [m.id, { speciesId: m.id, seen: false, captured: false, evolvedSeen: false }]),
-  );
+function rollSpeciesOfRarity(rarity: Rarity): string {
+  const candidates = MONSTERS.filter((m) => m.rarity === rarity);
+  return candidates[Math.floor(Math.random() * candidates.length)].id;
 }
 
 interface GameState {
-  gold: number;
-  crystals: number;
-  collection: MonsterInstance[];
-  codex: Record<string, CodexEntry>;
-  team: string[]; // instanceIds, max 6
+  gears: number;
+  collection: Record<string, CollectionEntry>;
+  equippedSpeciesId: string;
+  pityCounter: number;
+  bestScore: number;
+  totalPulls: number;
   log: string[];
 
-  addCurrency: (gold: number, crystals: number) => void;
+  pull: (count: 1 | 10) => PullResult[];
+  equip: (speciesId: string) => void;
+  recordRunResult: (result: RunResult) => void;
   addLog: (msg: string) => void;
-  markSeen: (speciesId: string) => void;
-  attemptCapture: (speciesId: string) => boolean;
-  grantXp: (xpByInstance: Record<string, number>) => string[]; // returns instanceIds that leveled up
-  evolveMonster: (instanceId: string) => boolean;
-  setTeam: (ids: string[]) => void;
-  toggleTeamMember: (instanceId: string) => void;
   resetGame: () => void;
 }
 
-const MAX_TEAM_SIZE = 6;
-
-function initialCollection(): MonsterInstance[] {
-  return [makeInstance('cogling', 3)];
+function starterCollection(): Record<string, CollectionEntry> {
+  return {
+    [STARTER_SPECIES_ID]: { speciesId: STARTER_SPECIES_ID, stars: 1, copies: 1, obtainedAt: Date.now() },
+  };
 }
 
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
-      gold: STARTING_GOLD,
-      crystals: STARTING_CRYSTALS,
-      collection: initialCollection(),
-      codex: (() => {
-        const codex = emptyCodex();
-        codex['cogling'] = { speciesId: 'cogling', seen: true, captured: true, evolvedSeen: false };
-        return codex;
-      })(),
-      team: [],
-      log: ['Welcome to Monsterfall. Your first warden, Cogling, awaits deployment.'],
+      gears: STARTING_GEARS,
+      collection: starterCollection(),
+      equippedSpeciesId: STARTER_SPECIES_ID,
+      pityCounter: 0,
+      bestScore: 0,
+      totalPulls: 0,
+      log: ['Welcome. Snubnose is ready to deploy — head to the Arena or try a Gacha pull.'],
 
-      addCurrency: (gold, crystals) =>
-        set((s) => ({ gold: s.gold + gold, crystals: s.crystals + crystals })),
+      pull: (count) => {
+        const state = get();
+        const cost = count === 1 ? PULL_COST_SINGLE : PULL_COST_TEN;
+        if (state.gears < cost) return [];
+
+        let pity = state.pityCounter;
+        const results: PullResult[] = [];
+        const collection = { ...state.collection };
+
+        for (let i = 0; i < count; i++) {
+          const guaranteed = pity >= PITY_PULLS_FOR_GUARANTEED_EPIC - 1;
+          const rarity = weightedRarity(guaranteed);
+          pity = rarity === 'epic' || rarity === 'legendary' ? 0 : pity + 1;
+
+          const speciesId = rollSpeciesOfRarity(rarity);
+          const existing = collection[speciesId];
+          const isNew = !existing;
+          const stars = existing ? Math.min(MAX_STARS, existing.stars + 1) : 1;
+          collection[speciesId] = {
+            speciesId,
+            stars,
+            copies: (existing?.copies ?? 0) + 1,
+            obtainedAt: existing?.obtainedAt ?? Date.now(),
+          };
+          results.push({ speciesId, rarity, isNew, starsAfter: stars });
+        }
+
+        set({
+          gears: state.gears - cost,
+          collection,
+          pityCounter: pity,
+          totalPulls: state.totalPulls + count,
+        });
+        return results;
+      },
+
+      equip: (speciesId) => {
+        if (!get().collection[speciesId]) return;
+        set({ equippedSpeciesId: speciesId });
+      },
+
+      recordRunResult: (result) => {
+        set((s) => ({
+          gears: s.gears + result.gearsEarned,
+          bestScore: Math.max(s.bestScore, result.score),
+          log: [...s.log.slice(-49), `Run ended: level ${result.level}, ${result.kills} kills, +${result.gearsEarned} gears.`],
+        }));
+      },
 
       addLog: (msg) => set((s) => ({ log: [...s.log.slice(-49), msg] })),
 
-      markSeen: (speciesId) =>
-        set((s) => ({
-          codex: { ...s.codex, [speciesId]: { ...s.codex[speciesId], seen: true } },
-        })),
-
-      attemptCapture: (speciesId) => {
-        const species = MONSTERS_BY_ID[speciesId];
-        const chance = RARITY_CONFIG[species.rarity].baseCaptureChance;
-        const success = Math.random() < chance;
-        set((s) => {
-          const codexEntry = { ...s.codex[speciesId], seen: true, captured: s.codex[speciesId].captured || success };
-          if (!success) {
-            return { codex: { ...s.codex, [speciesId]: codexEntry } };
-          }
-          return {
-            collection: [...s.collection, makeInstance(speciesId)],
-            codex: { ...s.codex, [speciesId]: codexEntry },
-          };
-        });
-        return success;
-      },
-
-      grantXp: (xpByInstance) => {
-        const leveledUp: string[] = [];
-        set((s) => ({
-          collection: s.collection.map((mon) => {
-            const gain = xpByInstance[mon.instanceId];
-            if (!gain) return mon;
-            let xp = mon.xp + gain;
-            let level = mon.level;
-            while (level < MAX_LEVEL && xp >= xpToNextLevel(level)) {
-              xp -= xpToNextLevel(level);
-              level += 1;
-            }
-            if (level > mon.level) leveledUp.push(mon.instanceId);
-            return { ...mon, xp, level };
-          }),
-        }));
-        return leveledUp;
-      },
-
-      evolveMonster: (instanceId) => {
-        const mon = get().collection.find((m) => m.instanceId === instanceId);
-        if (!mon) return false;
-        const species = MONSTERS_BY_ID[mon.speciesId];
-        if (!species.evolution || mon.evolved || mon.level < species.evolution.atLevel) return false;
-        set((s) => ({
-          collection: s.collection.map((m) => (m.instanceId === instanceId ? { ...m, evolved: true } : m)),
-          codex: { ...s.codex, [mon.speciesId]: { ...s.codex[mon.speciesId], evolvedSeen: true } },
-        }));
-        return true;
-      },
-
-      setTeam: (ids) => set({ team: ids.slice(0, MAX_TEAM_SIZE) }),
-
-      toggleTeamMember: (instanceId) =>
-        set((s) => {
-          if (s.team.includes(instanceId)) return { team: s.team.filter((id) => id !== instanceId) };
-          if (s.team.length >= MAX_TEAM_SIZE) return s;
-          return { team: [...s.team, instanceId] };
-        }),
-
       resetGame: () =>
         set({
-          gold: STARTING_GOLD,
-          crystals: STARTING_CRYSTALS,
-          collection: initialCollection(),
-          codex: (() => {
-            const codex = emptyCodex();
-            codex['cogling'] = { speciesId: 'cogling', seen: true, captured: true, evolvedSeen: false };
-            return codex;
-          })(),
-          team: [],
-          log: ['Welcome to Monsterfall. Your first warden, Cogling, awaits deployment.'],
+          gears: STARTING_GEARS,
+          collection: starterCollection(),
+          equippedSpeciesId: STARTER_SPECIES_ID,
+          pityCounter: 0,
+          bestScore: 0,
+          totalPulls: 0,
+          log: ['Welcome. Snubnose is ready to deploy — head to the Arena or try a Gacha pull.'],
         }),
     }),
-    { name: 'monsterfall-save-v1' },
+    { name: 'monster-arena-save-v1' },
   ),
 );
+
+export function speciesName(speciesId: string): string {
+  return MONSTERS_BY_ID[speciesId]?.name ?? speciesId;
+}
