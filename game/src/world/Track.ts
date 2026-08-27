@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createRoadMaterial } from './GroundMaterial';
+import { valueNoise2, fbm2 } from './GroundNoise';
 
 /**
  * The enemy path.
@@ -8,18 +10,27 @@ import * as THREE from 'three';
  * terrain underneath it, and the positions enemies interpolate along. Deriving
  * all three from one curve is what keeps enemies visually planted on the road
  * instead of drifting off the side of it.
+ *
+ * The ribbon is not a flat decal. It is crowned in the middle and dropped below
+ * grade at the edges, so the alpha cut of the road surface happens *underneath*
+ * the surrounding grass line rather than on top of it — that, plus the worn
+ * dirt the terrain material independently paints along the same corridor, is
+ * what makes the verge read as a real transition instead of a blend edge.
  */
 export class Track {
   readonly curve: THREE.CatmullRomCurve3;
   readonly mesh: THREE.Mesh;
+  readonly material: THREE.MeshStandardMaterial;
+  readonly width: number;
   /** Arc-length lookup so enemies move at constant speed, not constant t. */
   private readonly lengths: number[] = [];
   readonly totalLength: number;
 
   constructor(points: THREE.Vector3[], width = 3.0, texture?: THREE.Texture) {
     this.curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
+    this.width = width;
 
-    const SEGMENTS = 400;
+    const SEGMENTS = 480;
     // Build the arc-length table once; sampling the curve is not cheap.
     let acc = 0;
     let prev = this.curve.getPoint(0);
@@ -32,62 +43,89 @@ export class Track {
     }
     this.totalLength = acc;
 
-    this.mesh = new THREE.Mesh(
-      this.buildRibbon(SEGMENTS, width),
-      new THREE.MeshStandardMaterial({
-        map: texture ?? null,
-        color: texture ? '#ffffff' : '#6b5334',
-        roughness: 0.94,
-        metalness: 0.0,
-        transparent: true,
-        // Lift the ribbon off the terrain to avoid z-fighting without a
-        // visible gap at grazing camera angles.
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      }),
-    );
+    this.material = createRoadMaterial({ halfWidth: width * 0.5 });
+    // A caller-supplied texture is honoured for compatibility, but the surface
+    // is generated in the shader; the map only tints it.
+    if (texture) this.material.map = texture;
+
+    this.mesh = new THREE.Mesh(this.buildRibbon(SEGMENTS, width), this.material);
     this.mesh.receiveShadow = true;
+    this.mesh.castShadow = false;
     this.mesh.name = 'track';
   }
 
+  /**
+   * Ribbon geometry.
+   *
+   * Five spans across the width rather than two, so the road can carry a real
+   * cross-section: a crowned centre, a shoulder either side, and a lip that
+   * sits below grade. The extra vertices also give the verge somewhere to
+   * catch light, which a two-vertex strip cannot do at all.
+   */
   private buildRibbon(segments: number, width: number): THREE.BufferGeometry {
     const pos: number[] = [];
     const uv: number[] = [];
-    const norm: number[] = [];
     const idx: number[] = [];
     const up = new THREE.Vector3(0, 1, 0);
 
+    // Cross-section: fraction of half-width, and height offset in world units.
+    // Centre crown at +0.04, shoulders level, lip buried under the grass line.
+    const profile: Array<[number, number]> = [
+      [-1.0, -0.16],
+      [-0.72, -0.02],
+      [-0.34, 0.025],
+      [0.0, 0.045],
+      [0.34, 0.025],
+      [0.72, -0.02],
+      [1.0, -0.16],
+    ];
+    const lanes = profile.length;
+
+    const p = new THREE.Vector3();
+    const tan = new THREE.Vector3();
+    const side = new THREE.Vector3();
+
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
-      const p = this.curve.getPoint(t);
-      const tan = this.curve.getTangent(t).setY(0).normalize();
-      const side = new THREE.Vector3().crossVectors(tan, up).normalize();
+      this.curve.getPoint(t, p);
+      this.curve.getTangent(t, tan).setY(0).normalize();
+      side.crossVectors(tan, up).normalize();
 
-      // Taper the road slightly at both ends so it fades in rather than
-      // stopping at a hard rectangular edge.
-      const taper = Math.min(1, THREE.MathUtils.smoothstep(t, 0, 0.03) + 0.001) *
-                    Math.min(1, THREE.MathUtils.smoothstep(1 - t, 0, 0.03) + 0.001);
-      const w = (width * 0.5) * (0.85 + 0.15 * Math.sin(t * 22.0)) * Math.max(taper, 0.55);
+      const along = t * this.totalLength;
 
-      const l = new THREE.Vector3().copy(p).addScaledVector(side, -w);
-      const r = new THREE.Vector3().copy(p).addScaledVector(side, w);
-      pos.push(l.x, l.y, l.z, r.x, r.y, r.z);
-      norm.push(0, 1, 0, 0, 1, 0);
-      const v = t * this.totalLength * 0.25;
-      uv.push(0, v, 1, v);
+      // Width wanders over tens of metres so no stretch of road is a constant
+      // ribbon. Deterministic: pure function of arc length.
+      const wobble = (fbm2(along * 0.055, 4.7, 5501, 3) - 0.5) * 0.30
+                   + (valueNoise2(along * 0.31, 1.3, 9109) - 0.5) * 0.12;
+      // Ease the very ends in so the road does not stop on a hard rectangle.
+      const taper = Math.min(1, 0.25 + THREE.MathUtils.smoothstep(t, 0, 0.05))
+                  * Math.min(1, 0.25 + THREE.MathUtils.smoothstep(1 - t, 0, 0.05));
+      const w = width * 0.5 * (1.0 + wobble) * taper;
+
+      for (let l = 0; l < lanes; l++) {
+        const [frac, dy] = profile[l];
+        pos.push(
+          p.x + side.x * frac * w,
+          p.y + dy,
+          p.z + side.z * frac * w,
+        );
+        uv.push((frac + 1) * 0.5, along);
+      }
 
       if (i < segments) {
-        const a = i * 2;
-        idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+        const a = i * lanes;
+        const b = (i + 1) * lanes;
+        for (let l = 0; l < lanes - 1; l++) {
+          idx.push(a + l, a + l + 1, b + l, a + l + 1, b + l + 1, b + l);
+        }
       }
     }
 
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
+    g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
   }
@@ -131,6 +169,6 @@ export class Track {
 
   dispose() {
     this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.Material).dispose();
+    this.material.dispose();
   }
 }

@@ -103,6 +103,9 @@ export class CollectionPanel {
     const st = document.createElement('style');
     st.id = 'codex-styles';
     st.textContent = `
+      /* Must come first: a display value in .codex would otherwise override
+         the browser default [hidden] { display: none } and pin the panel open. */
+      .codex[hidden] { display: none; }
       .codex {
         position: absolute; inset: 0; z-index: 20; pointer-events: auto;
         background: rgba(4,8,14,.68); backdrop-filter: blur(7px);

@@ -8,6 +8,9 @@ import { Terrain } from './world/Terrain';
 import { Battle, Tower, type TowerVisual } from './combat/Battle';
 import { WAVES } from './combat/Waves';
 import { Hud, type HudSpecies } from './ui/Hud';
+import { Foliage } from './world/Foliage';
+import { Creature } from './creatures/Creature';
+import { SPECIES, SPECIES_ORDER } from './creatures/species';
 import { Particles } from './fx/Particles';
 import { Feel, FloatingText } from './fx/Feel';
 import { GameAudio } from './audio/Audio';
@@ -44,25 +47,31 @@ const terrain = new Terrain(track, { size: 90, resolution: 176, amplitude: 2.2 }
 engine.scene.add(terrain.mesh);
 engine.scene.add(track.mesh);
 
+const foliage = new Foliage(terrain, track, { seed: 90210, density: 0.55 });
+engine.scene.add(foliage.group);
+
 // --- Roster ---------------------------------------------------------------
-// Placeholder stats and colours until the creature system lands; the ids are
-// stable so swapping in real species is a visual change only.
-const ROSTER: Array<HudSpecies & { damage: number; range: number; rate: number }> = [
-  { id: 'sprout',  name: 'Bramblet',  element: 'Verdant', cost: 40,  accent: '#7ad06a', damage: 5,  range: 11, rate: 1.7 },
-  { id: 'ember',   name: 'Cindercub', element: 'Ember',   cost: 65,  accent: '#ff8a4d', damage: 11, range: 9.5, rate: 1.1 },
-  { id: 'tide',    name: 'Rillfin',   element: 'Tide',    cost: 55,  accent: '#5ac8e8', damage: 7,  range: 13, rate: 1.3 },
-  { id: 'storm',   name: 'Voltling',  element: 'Storm',   cost: 90,  accent: '#c69bff', damage: 9,  range: 15, rate: 2.2 },
-  { id: 'iron',    name: 'Cogsworth', element: 'Iron',    cost: 120, accent: '#d8b45c', damage: 24, range: 8.5, rate: 0.7 },
-];
+// Derived from the species table so stats, colours and costs have exactly one
+// source of truth.
+const ROSTER: Array<HudSpecies & { damage: number; range: number; rate: number }> =
+  SPECIES_ORDER.filter((id) => SPECIES[id].stage === 1).map((id) => {
+    const sp = SPECIES[id];
+    return {
+      id,
+      name: sp.name,
+      element: sp.element,
+      cost: sp.stats.cost,
+      accent: sp.palette.accent,
+      damage: sp.stats.damage,
+      range: sp.stats.range,
+      rate: sp.stats.attackSpeed,
+    };
+  });
 const COSTS = Object.fromEntries(ROSTER.map((r) => [r.id, r.cost]));
 
-const FLAVOUR: Record<string, string> = {
-  sprout: 'Roots itself where the canopy thins. Its thorn-shot hardens mid-flight.',
-  ember:  'Sleeps in ash beds. Wakes hungry, and warm enough to bend brass.',
-  tide:   'Carries a pocket of river with it. Never quite dries.',
-  storm:  'Its coat holds a charge for days. Bad weather follows it uphill.',
-  iron:   'A wound-spring heart. Slow to turn, impossible to stop.',
-};
+const FLAVOUR: Record<string, string> = Object.fromEntries(
+  ROSTER.map((r) => [r.id, SPECIES[r.id].tagline]),
+);
 
 // --- Battle ---------------------------------------------------------------
 const hudHost = document.createElement('div');
@@ -148,28 +157,36 @@ const battle = new Battle(track, {
 engine.scene.add(battle.group);
 
 /**
- * Stand-in tower visual until the creature system lands. Deliberately simple
- * and clearly placeholder so it is never mistaken for finished art.
+ * Wraps a Creature as a tower.
+ *
+ * The combat layer only needs the structural TowerVisual contract, so the
+ * creature stays unaware it is being used as a tower; turning to face a target
+ * is added here rather than baked into the creature itself.
  */
-function placeholderTower(color: THREE.ColorRepresentation): TowerVisual {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.42, 0.7, 6, 12),
-    new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1 }),
-  );
-  body.position.y = 0.85;
-  body.castShadow = true;
-  group.add(body);
+function creatureTower(speciesId: string): TowerVisual & { speciesId: string; creature: Creature } {
+  const creature = new Creature(speciesId);
+  let turn = creature.group.rotation.y;
 
-  let recoil = 0;
   return {
-    group,
+    speciesId,
+    creature,
+    group: creature.group,
     update(dt, elapsed) {
-      recoil = Math.max(0, recoil - dt * 4);
-      body.position.y = 0.85 + Math.sin(elapsed * 2.2) * 0.03 - recoil * 0.2;
+      creature.update(dt, elapsed);
+      // Ease toward the desired facing so aim reads as a turn, not a snap.
+      const cur = creature.group.rotation.y;
+      let delta = turn - cur;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      creature.group.rotation.y = cur + delta * (1 - Math.exp(-dt * 9));
     },
-    playAttack() { recoil = 1; },
-    faceTarget(worldPos) { group.lookAt(worldPos.x, group.position.y, worldPos.z); },
+    playAttack() { creature.playAttack(); },
+    faceTarget(worldPos) {
+      turn = Math.atan2(
+        worldPos.x - creature.group.position.x,
+        worldPos.z - creature.group.position.z,
+      );
+    },
   };
 }
 
@@ -222,8 +239,7 @@ container.addEventListener('pointerup', (e) => {
   const spec = ROSTER.find((r) => r.id === id)!;
 
   const spot = hoverPoint.clone().setY(terrain.heightAt(hoverPoint.x, hoverPoint.z));
-  const visual = placeholderTower(spec.accent) as TowerVisual & { speciesId: string };
-  visual.speciesId = spec.id;
+  const visual = creatureTower(spec.id);
   visual.group.position.copy(spot);
 
   // Carried-over levels from previous runs make a placement stronger.
@@ -271,6 +287,7 @@ engine.onUpdate((dt, elapsed) => {
   const scaled = dt * SPEEDS[speedIndex] * timeScale;
 
   battle.update(scaled, elapsed);
+  foliage.update(scaled, elapsed);
   particles.update(scaled);
 
   const size = engine.renderer.getSize(new THREE.Vector2());
@@ -289,17 +306,21 @@ engine.onUpdate((dt, elapsed) => {
 
 // Seed a few towers and open a wave so the game shows live combat on load
 // rather than an empty field.
-for (const spot of [
+const seedIds = ROSTER.map((r) => r.id);
+const seedSpots2 = [
   new THREE.Vector3(-14, 0, -6),
   new THREE.Vector3(6, 0, 2),
   new THREE.Vector3(-4, 0, -14),
-]) {
+];
+for (let i = 0; i < seedSpots2.length; i++) {
+  const spot = seedSpots2[i];
   spot.y = terrain.heightAt(spot.x, spot.z);
-  const visual = placeholderTower('#7ad06a');
+  const visual = creatureTower(seedIds[i % seedIds.length]);
   visual.group.position.copy(spot);
+  const sp = SPECIES[visual.speciesId];
   battle.addTower(new Tower(visual, {
-    damage: 6, range: 12, rate: 1.8,
-    projectile: { speed: 26, damage: 6, color: '#9effd0' },
+    damage: sp.stats.damage, range: sp.stats.range, rate: sp.stats.attackSpeed,
+    projectile: { speed: 26, damage: sp.stats.damage, color: sp.palette.glow },
   }, spot.clone()));
 }
 battle.startWave(4);
