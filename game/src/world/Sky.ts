@@ -30,6 +30,7 @@ export interface SkyUniforms {
   topColor: { value: THREE.Color };
   midColor: { value: THREE.Color };
   horizonColor: { value: THREE.Color };
+  horizonWarm: { value: THREE.Color };
   groundColor: { value: THREE.Color };
   sunDir: { value: THREE.Vector3 };
   sunColor: { value: THREE.Color };
@@ -45,7 +46,10 @@ export interface SkyOptions {
   sunDir: THREE.Vector3;
   topColor?: THREE.ColorRepresentation;
   midColor?: THREE.ColorRepresentation;
+  /** Horizon haze away from the sun. */
   horizonColor?: THREE.ColorRepresentation;
+  /** Horizon haze in the sun's quarter. */
+  horizonWarm?: THREE.ColorRepresentation;
   groundColor?: THREE.ColorRepresentation;
   sunColor?: THREE.ColorRepresentation;
   cloudLit?: THREE.ColorRepresentation;
@@ -70,6 +74,7 @@ ${GROUND_GLSL}
 uniform vec3  topColor;
 uniform vec3  midColor;
 uniform vec3  horizonColor;
+uniform vec3  horizonWarm;
 uniform vec3  groundColor;
 uniform vec3  sunDir;
 uniform vec3  sunColor;
@@ -105,21 +110,31 @@ void main() {
   vec3 dir = normalize(vWorld);
   float h = dir.y;
 
+  vec3 sd = normalize(sunDir);
+  float sunAmt = max(dot(dir, sd), 0.0);
+
   /* ------------------------------------------------------------- gradient */
-  // Four stops. The horizon band is deliberately warm and narrow: it is the
-  // reference the aerial-perspective haze is matched to, so distant land
-  // dissolves into it rather than sitting on top of it.
+  // The horizon band is not one colour. Warm haze piles up in the sun's
+  // quarter and stays cool everywhere else, so which way the key light points
+  // is legible from the sky alone — and, more practically, so a camera looking
+  // away from the sun gets a cool pale band that lets the greens read, instead
+  // of a wall of sand yellow competing with the playfield for attention.
+  vec2 flatDir = normalize(dir.xz + vec2(1e-5));
+  vec2 flatSun = normalize(sd.xz + vec2(1e-5));
+  float warmAz = pow(max(dot(flatDir, flatSun), 0.0), 2.2);
+
   float above = clamp(h, 0.0, 1.0);
-  vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.30, above));
-  col = mix(col, topColor, smoothstep(0.18, 0.85, above));
+  vec3 band = mix(horizonColor, horizonWarm, warmAz * (1.0 - smoothstep(0.0, 0.34, above)));
+  vec3 col = mix(band, midColor, smoothstep(0.0, 0.19, above));
+  col = mix(col, topColor, smoothstep(0.12, 0.70, above));
   col = mix(col, groundColor, smoothstep(0.0, -0.16, h));
 
   /* ------------------------------------------------------------------ sun */
-  vec3 sd = normalize(sunDir);
-  float sunAmt = max(dot(dir, sd), 0.0);
-  // Wide low-order halo first so the whole quadrant lifts, then the disc.
-  col += sunColor * pow(sunAmt, 3.5) * 0.18;
-  col += sunColor * pow(sunAmt, 40.0) * 0.55;
+  // Kept tight. A wide low-order halo lifts the value of the entire sun-side
+  // hemisphere, which is exactly the flat bright wash the band split above is
+  // there to avoid.
+  col += sunColor * pow(sunAmt, 6.0) * 0.14;
+  col += sunColor * pow(sunAmt, 60.0) * 0.50;
   col += sunColor * pow(sunAmt, 900.0) * 4.0;
 
   /* --------------------------------------------------------------- clouds */
@@ -162,7 +177,8 @@ export function createSky(opts: SkyOptions): SkyHandle {
   const uniforms: SkyUniforms = {
     topColor: { value: new THREE.Color(opts.topColor ?? '#2c73c8') },
     midColor: { value: new THREE.Color(opts.midColor ?? '#8cc4ea') },
-    horizonColor: { value: new THREE.Color(opts.horizonColor ?? '#eadfc0') },
+    horizonColor: { value: new THREE.Color(opts.horizonColor ?? '#cfe3ef') },
+    horizonWarm: { value: new THREE.Color(opts.horizonWarm ?? '#f6dfae') },
     groundColor: { value: new THREE.Color(opts.groundColor ?? '#b9b492') },
     sunDir: { value: opts.sunDir.clone().normalize() },
     sunColor: { value: new THREE.Color(opts.sunColor ?? '#ffd39a') },

@@ -50,8 +50,8 @@ const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
 // Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
 // and rock as separate materials; they show one cool aggregate, and painting
 // them as if they did is what makes a far ridge read as a near one.
-const vec3 FAR_FOREST = vec3(0.040, 0.064, 0.046);
-const vec3 FAR_ROCK   = vec3(0.088, 0.094, 0.108);
+const vec3 FAR_FOREST = vec3(0.062, 0.094, 0.062);
+const vec3 FAR_ROCK   = vec3(0.150, 0.156, 0.172);
 `;
 
 export interface TerrainMaterialOptions {

@@ -32,14 +32,14 @@ export interface EnvironmentOptions {
  */
 const ART = {
   azimuth: 156,
-  elevation: 26,
-  keyColor: '#ffe0b4',
-  keyIntensity: 4.9,
-  fillColor: '#9cc4ee',
-  fillIntensity: 0.62,
-  hemiSky: '#bcd9ff',
-  hemiGround: '#4d5c33',
-  hemiIntensity: 0.72,
+  elevation: 30,
+  keyColor: '#ffe2ba',
+  keyIntensity: 5.4,
+  fillColor: '#a6cbf0',
+  fillIntensity: 0.75,
+  hemiSky: '#cde6ff',
+  hemiGround: '#63713f',
+  hemiIntensity: 1.0,
 };
 
 export class Environment {
@@ -75,10 +75,11 @@ export class Environment {
     this.skyHandle = createSky({
       radius: 430,
       sunDir: this.sunDir,
-      topColor: '#2a6fc6',
-      midColor: '#8ec6ec',
-      horizonColor: '#f0e2c2',
-      groundColor: '#c2bb9a',
+      topColor: '#2769c2',
+      midColor: '#8ac6ee',
+      horizonColor: '#cfe4f1',
+      horizonWarm: '#f7e2b2',
+      groundColor: '#b9bea4',
       sunColor: '#ffd9a2',
       cloudLit: '#fff8ec',
       cloudDark: '#9db2cd',
@@ -127,7 +128,7 @@ export class Environment {
       groundY: -1.0,
       // Roughly the height of the tree canopy plus the near hills: crests break
       // out of the layer, the basins behind them stay buried.
-      scaleHeight: 26,
+      scaleHeight: 33,
       sunDir: this.sunDir,
       inscatterPower: 3.0,
       inscatterStrength: 0.85,
@@ -135,7 +136,7 @@ export class Environment {
       // gameplay picks up haze at all.
       nearClear: 16,
     });
-    scene.fog = new THREE.FogExp2(0xffffff, 0.0088);
+    scene.fog = new THREE.FogExp2(0xffffff, 0.0102);
     scene.fog.color.copy(haze);
   }
 
@@ -157,7 +158,7 @@ export class Environment {
 
     const target = pmrem.fromScene(probeScene, 0, 0.1, 1000);
     scene.environment = target.texture;
-    scene.environmentIntensity = 1.0;
+    scene.environmentIntensity = 1.15;
 
     // The probe owns its geometry; the material is shared with the live dome
     // and must not be disposed here.
