@@ -1,119 +1,142 @@
 import * as THREE from 'three';
+import { createSky, type SkyHandle } from './Sky';
+import { configureAerialPerspective } from './AerialPerspective';
 
 export interface EnvironmentOptions {
-  /** Sun azimuth/elevation in degrees. */
+  /** Sun azimuth/elevation in degrees. Overrides the art-directed default. */
   sunAzimuth?: number;
   sunElevation?: number;
+  /** Opt out of the art-directed time of day and honour the options above. */
+  useCallerSun?: boolean;
 }
 
 /**
- * Sky dome, sun, fill light and fog.
+ * The time of day, owned in one place.
  *
- * The lighting rig is a warm key from a low sun plus a cool sky-bounce fill.
- * That warm/cool split is what gives forms readable shading; a single white
- * light flattens everything into cardboard regardless of mesh quality.
+ * Late afternoon rather than noon. A high sun puts a strong N.L on every
+ * upward face at once, which is exactly what removes form: the terrain, the
+ * canopy and the road all take the same value and the frame flattens into a
+ * green field with a brown line through it. Dropping the key to ~26 degrees
+ * costs some raw brightness and buys three things back:
+ *
+ *  - shadows two to three times longer, so every tree stamps its own silhouette
+ *    onto the ground and the eye gets a free readout of the terrain's shape;
+ *  - a real light/shade split across every rounded form, warm on the key side
+ *    and cool from the sky on the other, which is what makes shapes look solid;
+ *  - a warm key against a cool ambient, so colour — not just value — separates
+ *    lit from unlit.
+ *
+ * The fill is the other half of that. A single directional plus hemisphere
+ * leaves the anti-key side of every trunk and rock reading as a flat silhouette;
+ * a dim cool bounce from the opposite quarter puts a terminator back in.
  */
+const ART = {
+  azimuth: 156,
+  elevation: 26,
+  keyColor: '#ffe0b4',
+  keyIntensity: 4.9,
+  fillColor: '#9cc4ee',
+  fillIntensity: 0.62,
+  hemiSky: '#bcd9ff',
+  hemiGround: '#4d5c33',
+  hemiIntensity: 0.72,
+};
+
 export class Environment {
   readonly group = new THREE.Group();
   readonly sun: THREE.DirectionalLight;
+  /** Cool bounce from the anti-key quarter. No shadow: it is a fill, not a key. */
+  readonly fill: THREE.DirectionalLight;
   readonly hemi: THREE.HemisphereLight;
   readonly sky: THREE.Mesh;
 
-  private readonly skyUniforms;
+  private readonly skyHandle: SkyHandle;
+  private readonly sunDir: THREE.Vector3;
 
   constructor(scene: THREE.Scene, opts: EnvironmentOptions = {}) {
-    const azimuth = THREE.MathUtils.degToRad(opts.sunAzimuth ?? 135);
-    // A high sun keeps N.L strong across the mostly-upward-facing terrain.
-    // At a low elevation the whole playfield sits at grazing incidence and
-    // reads muddy no matter how the albedo is authored.
-    const elevation = THREE.MathUtils.degToRad(opts.sunElevation ?? 52);
+    const useCaller = opts.useCallerSun === true;
+    const azimuth = THREE.MathUtils.degToRad(
+      useCaller ? (opts.sunAzimuth ?? ART.azimuth) : ART.azimuth,
+    );
+    const elevation = THREE.MathUtils.degToRad(
+      useCaller ? (opts.sunElevation ?? ART.elevation) : ART.elevation,
+    );
 
-    const sunDir = new THREE.Vector3(
+    this.sunDir = new THREE.Vector3(
       Math.cos(elevation) * Math.cos(azimuth),
       Math.sin(elevation),
       Math.cos(elevation) * Math.sin(azimuth),
-    );
+    ).normalize();
 
-    this.skyUniforms = {
-      topColor: { value: new THREE.Color('#3d8fd6') },
-      midColor: { value: new THREE.Color('#bfe0f5') },
-      bottomColor: { value: new THREE.Color('#dfe8d8') },
-      sunDir: { value: sunDir.clone() },
-      sunColor: { value: new THREE.Color('#ffd9a0') },
-    };
-
-    this.sky = new THREE.Mesh(
-      new THREE.SphereGeometry(300, 48, 32),
-      new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-        uniforms: this.skyUniforms,
-        vertexShader: /* glsl */ `
-          varying vec3 vWorld;
-          void main() {
-            vec4 wp = modelMatrix * vec4(position, 1.0);
-            vWorld = wp.xyz;
-            gl_Position = projectionMatrix * viewMatrix * wp;
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          uniform vec3 topColor;
-          uniform vec3 midColor;
-          uniform vec3 bottomColor;
-          uniform vec3 sunDir;
-          uniform vec3 sunColor;
-          varying vec3 vWorld;
-
-          void main() {
-            vec3 dir = normalize(vWorld);
-            float h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-
-            // Three-stop vertical ramp: zenith -> horizon haze -> ground bounce.
-            vec3 col = mix(bottomColor, midColor, smoothstep(0.42, 0.52, h));
-            col = mix(col, topColor, smoothstep(0.5, 0.92, h));
-
-            // Sun disc plus a wide forward-scattering halo.
-            float d = max(dot(dir, normalize(sunDir)), 0.0);
-            col += sunColor * pow(d, 220.0) * 3.0;
-            col += sunColor * pow(d, 6.0) * 0.28;
-
-            gl_FragColor = vec4(col, 1.0);
-          }
-        `,
-      }),
-    );
-    this.sky.name = 'sky';
+    /* --------------------------------------------------------------- sky */
+    // The dome must comfortably enclose the terrain apron *and* stay inside the
+    // camera's far plane. When it does not, the far corners of the ground mesh
+    // punch through it and read as dark slabs hanging in the sky.
+    this.skyHandle = createSky({
+      radius: 430,
+      sunDir: this.sunDir,
+      topColor: '#2a6fc6',
+      midColor: '#8ec6ec',
+      horizonColor: '#f0e2c2',
+      groundColor: '#c2bb9a',
+      sunColor: '#ffd9a2',
+      cloudLit: '#fff8ec',
+      cloudDark: '#9db2cd',
+      cover: 0.505,
+      scale: 0.58,
+    });
+    this.sky = this.skyHandle.mesh;
     this.group.add(this.sky);
 
-    // Key light. Shadow frustum is kept tight around the playfield -- a wide
-    // frustum spreads the same texels over more world and the contact shadows
-    // under creatures turn to mush.
-    this.sun = new THREE.DirectionalLight('#fff4e2', 4.2);
-    this.sun.position.copy(sunDir).multiplyScalar(60);
+    /* ------------------------------------------------------------ lights */
+    this.sun = new THREE.DirectionalLight(ART.keyColor, ART.keyIntensity);
+    this.sun.position.copy(this.sunDir).multiplyScalar(130);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 140;
-    this.sun.shadow.camera.left = -34;
-    this.sun.shadow.camera.right = 34;
-    this.sun.shadow.camera.top = 34;
-    this.sun.shadow.camera.bottom = -34;
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.02;
-    this.sun.shadow.radius = 2.2;
+    this.sun.shadow.camera.near = 40;
+    this.sun.shadow.camera.far = 260;
+    // A low sun throws long shadows, so the frustum has to be wide enough to
+    // hold the caster *and* everything its shadow lands on. Too tight and trees
+    // near the edge of the map stop casting the moment the sun drops.
+    this.sun.shadow.camera.left = -66;
+    this.sun.shadow.camera.right = 66;
+    this.sun.shadow.camera.top = 66;
+    this.sun.shadow.camera.bottom = -66;
+    this.sun.shadow.bias = -0.0007;
+    this.sun.shadow.normalBias = 0.028;
+    this.sun.shadow.radius = 2.4;
     this.group.add(this.sun);
     this.group.add(this.sun.target);
 
-    // Cool sky fill so shadowed faces stay readable instead of going black.
-    this.hemi = new THREE.HemisphereLight('#a8d2ff', '#5b6b3a', 0.9);
+    this.fill = new THREE.DirectionalLight(ART.fillColor, ART.fillIntensity);
+    this.fill.position.set(-this.sunDir.x, 0.42, -this.sunDir.z).multiplyScalar(60);
+    this.fill.castShadow = false;
+    this.group.add(this.fill);
+    this.group.add(this.fill.target);
+
+    this.hemi = new THREE.HemisphereLight(ART.hemiSky, ART.hemiGround, ART.hemiIntensity);
     this.group.add(this.hemi);
 
     scene.add(this.group);
-    // Density is deliberately low: fog is here to give depth cues between the
-    // near and far side of the map, not to hide it. Colour is matched to the
-    // horizon band of the sky so distant terrain dissolves into it.
-    scene.fog = new THREE.FogExp2('#cfe2ee', 0.0055);
+
+    /* -------------------------------------------------------- atmosphere */
+    const haze = configureAerialPerspective({
+      haze: '#cfe0e8',
+      inscatter: '#ffe3b4',
+      zenith: '#a8cfec',
+      groundY: -1.0,
+      // Roughly the height of the tree canopy plus the near hills: crests break
+      // out of the layer, the basins behind them stay buried.
+      scaleHeight: 26,
+      sunDir: this.sunDir,
+      inscatterPower: 3.0,
+      inscatterStrength: 0.85,
+      // The whole playfield is inside this, so nothing that matters for
+      // gameplay picks up haze at all.
+      nearClear: 16,
+    });
+    scene.fog = new THREE.FogExp2(0xffffff, 0.0088);
+    scene.fog.color.copy(haze);
   }
 
   /**
@@ -129,24 +152,30 @@ export class Environment {
 
     // Render only the sky dome into the probe, not the geometry.
     const probeScene = new THREE.Scene();
-    const skyClone = this.sky.clone();
-    probeScene.add(skyClone);
+    const probe = this.skyHandle.probeMesh();
+    probeScene.add(probe);
 
     const target = pmrem.fromScene(probeScene, 0, 0.1, 1000);
     scene.environment = target.texture;
     scene.environmentIntensity = 1.0;
 
-    skyClone.geometry.dispose();
+    // The probe owns its geometry; the material is shared with the live dome
+    // and must not be disposed here.
+    probe.geometry.dispose();
     pmrem.dispose();
     return target;
   }
 
+  /** Advance cloud drift. Safe to call every frame; safe never to call. */
+  update(_dt: number, elapsed: number) {
+    this.skyHandle.uniforms.uTime.value = elapsed;
+  }
+
   get sunDirection(): THREE.Vector3 {
-    return this.skyUniforms.sunDir.value as THREE.Vector3;
+    return this.sunDir;
   }
 
   dispose() {
-    this.sky.geometry.dispose();
-    (this.sky.material as THREE.Material).dispose();
+    this.skyHandle.dispose();
   }
 }

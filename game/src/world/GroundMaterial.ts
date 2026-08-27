@@ -35,15 +35,23 @@ import { GROUND_GLSL } from './GroundNoise';
  * values clips to fluorescent mush through ACES.
  */
 export const GROUND_PALETTE_GLSL = /* glsl */ `
-const vec3 GRASS_DEEP = vec3(0.052, 0.079, 0.036);
-const vec3 GRASS_MID  = vec3(0.092, 0.132, 0.052);
-const vec3 GRASS_LIT  = vec3(0.150, 0.190, 0.076);
-const vec3 GRASS_DRY  = vec3(0.190, 0.172, 0.086);
-const vec3 DIRT_DARK  = vec3(0.055, 0.040, 0.027);
-const vec3 DIRT_MID   = vec3(0.108, 0.077, 0.049);
-const vec3 DIRT_LIT   = vec3(0.172, 0.132, 0.088);
+const vec3 GRASS_DEEP = vec3(0.046, 0.081, 0.033);
+const vec3 GRASS_MID  = vec3(0.086, 0.142, 0.049);
+const vec3 GRASS_LIT  = vec3(0.144, 0.212, 0.071);
+const vec3 GRASS_DRY  = vec3(0.202, 0.183, 0.084);
+// The road is a gameplay affordance before it is a surface: it has to read as a
+// separate, lighter, warmer band from any camera angle, so the dirt ramp sits
+// deliberately above the grass in value rather than beside it.
+const vec3 DIRT_DARK  = vec3(0.074, 0.053, 0.034);
+const vec3 DIRT_MID   = vec3(0.152, 0.112, 0.070);
+const vec3 DIRT_LIT   = vec3(0.248, 0.198, 0.134);
 const vec3 ROCK_DARK  = vec3(0.052, 0.052, 0.056);
 const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
+// Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
+// and rock as separate materials; they show one cool aggregate, and painting
+// them as if they did is what makes a far ridge read as a near one.
+const vec3 FAR_FOREST = vec3(0.040, 0.064, 0.046);
+const vec3 FAR_ROCK   = vec3(0.088, 0.094, 0.108);
 `;
 
 export interface TerrainMaterialOptions {
@@ -206,6 +214,13 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // Baked cavity. Cheap, but it is what gives the large forms volume in
           // ambient-only areas where N.L carries no information.
           col *= mix(0.80, 1.04, vGOcc);
+
+          // Collapse to mass tone with distance. Without this the apron's
+          // ridgelines carry the same grass/rock mottling as the ground under
+          // the player's feet, and the eye reads them as nearby hillocks.
+          float farBlend = smoothstep(90.0, 250.0, viewDist);
+          vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
+          col = mix(col, farTone, farBlend * 0.92);
 
           diffuseColor.rgb *= col;
 
