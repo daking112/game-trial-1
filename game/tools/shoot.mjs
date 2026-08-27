@@ -61,6 +61,11 @@ try {
 // Stop the rAF loop so only our explicit steps advance the world.
 await page.evaluate(() => window.__game.engine.stop());
 
+// DOM mode composites the HTML overlay (the HUD) over the canvas. It needs a
+// real compositor commit, which only happens inside a rAF callback, so the
+// draw is scheduled rather than called directly.
+const domMode = args.dom === true || args.dom === 'true';
+
 mkdirSync(outDir, { recursive: true });
 const results = [];
 
@@ -80,11 +85,20 @@ for (const name of shotNames) {
   mkdirSync(dirname(file), { recursive: true });
   // Read the WebGL backbuffer directly. page.screenshot() waits for a
   // compositor commit that never arrives while the rAF loop is stopped.
-  const dataUrl = await page.evaluate(
-    () => window.__game.engine.renderer.domElement.toDataURL('image/png'),
-  );
-  const buf = Buffer.from(dataUrl.split(',')[1], 'base64');
-  writeFileSync(file, buf);
+  let buf;
+  if (domMode) {
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => {
+      window.__game.draw();
+      requestAnimationFrame(() => r());
+    })));
+    buf = await page.screenshot({ path: file, animations: 'disabled', timeout: 20000 });
+  } else {
+    const dataUrl = await page.evaluate(
+      () => window.__game.engine.renderer.domElement.toDataURL('image/png'),
+    );
+    buf = Buffer.from(dataUrl.split(',')[1], 'base64');
+    writeFileSync(file, buf);
+  }
   const stats = await page.evaluate(() => window.__game.stats());
   results.push({ name, file, bytes: buf.length, ...stats });
   console.log(`${name}: ${file} (${buf.length}b, ${stats.drawCalls} calls, ${stats.triangles} tris)`);
