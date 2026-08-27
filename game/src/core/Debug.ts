@@ -16,6 +16,8 @@ export interface DebugApi {
   pose(req: PoseRequest): void;
   /** Render a single frame from current state. */
   draw(): void;
+  /** Median/min/max frame time in ms over a burst of full renders. */
+  profile(frames?: number): { medianMs: number; minMs: number; maxMs: number };
   /** Reset the sim clock so captures are reproducible. */
   reset(): void;
   stats(): Record<string, number>;
@@ -60,6 +62,12 @@ export function installDebugApi(engine: Engine): DebugApi {
     },
 
     stats() {
+      // renderer.info reflects only the most recent draw, which after a
+      // composer run is the final fullscreen post quad -- hence the useless
+      // "1 call, 1 triangle" it reported before. Rendering the scene once
+      // directly gives the real geometry cost.
+      engine.renderer.setRenderTarget(null);
+      engine.renderer.render(engine.scene, engine.camera);
       const info = engine.renderer.info;
       return {
         drawCalls: info.render.calls,
@@ -68,6 +76,23 @@ export function installDebugApi(engine: Engine): DebugApi {
         geometries: info.memory.geometries,
         textures: info.memory.textures,
         elapsed: engine.elapsed,
+      };
+    },
+
+    /** Median frame time in ms over `frames` full composer renders. */
+    profile(frames = 24) {
+      const samples: number[] = [];
+      for (let i = 0; i < frames; i++) {
+        const t0 = performance.now();
+        engine.stepLogic(1 / 60);
+        engine.render();
+        samples.push(performance.now() - t0);
+      }
+      samples.sort((a, b) => a - b);
+      return {
+        medianMs: +samples[Math.floor(samples.length / 2)].toFixed(2),
+        minMs: +samples[0].toFixed(2),
+        maxMs: +samples[samples.length - 1].toFixed(2),
       };
     },
   };
