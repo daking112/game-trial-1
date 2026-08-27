@@ -965,13 +965,13 @@ export const SPECIES: Record<string, Species> = {
       },
       neck: { segments: 3, radiusBase: 0.115, radiusTop: 0.068, arch: -0.42, ruff: 0.9 },
       head: {
-        y: 0.930, z: 0.185, radius: 0.118, width: 0.92, depth: 1.20,
-        crownFlat: 0.34, brow: 0.78, cheek: 0.22, jaw: 0.26, tilt: 0.10,
-        snout: { length: 0.215, radius: 0.070, tipRadius: 0.024, drop: 0.080, keel: 0.90 },
+        y: 0.936, z: 0.205, radius: 0.148, width: 0.94, depth: 1.24,
+        crownFlat: 0.34, brow: 0.80, cheek: 0.24, jaw: 0.28, tilt: 0.10,
+        snout: { length: 0.245, radius: 0.082, tipRadius: 0.028, drop: 0.090, keel: 0.92 },
       },
       eye: {
-        radius: 0.044, spacing: 0.068, y: 0.955, z: 0.240,
-        splay: 0.56, lid: 0.44, lidTilt: 0.36, mask: 1.0,
+        radius: 0.052, spacing: 0.080, y: 0.968, z: 0.272,
+        splay: 0.58, lid: 0.40, lidTilt: 0.38, mask: 1.0,
       },
       arms: null,
       legs: {

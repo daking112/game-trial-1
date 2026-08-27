@@ -1996,7 +1996,7 @@ function buildFeature(
        */
       const S = f.span;
       const C = f.chord;
-      const shoulder = fr.at(t.shoulderY - 0.34).clone().addScaledVector(fr.dorsal, t.radius * 0.58);
+      const shoulder = fr.at(t.shoulderY - 0.58).clone().addScaledVector(fr.dorsal, t.radius * 0.62);
       const l = new Part('wingL', c.chest, V(-t.radius * 0.62, shoulder.y, shoulder.z));
       const r = new Part('wingR', c.chest, V(t.radius * 0.62, shoulder.y, shoulder.z));
 
@@ -2009,7 +2009,7 @@ function buildFeature(
         // forward, so -Y (the membrane) falls back and down. The plane
         // therefore faces forward-outward and presents its full area to a
         // three-quarter view instead of turning edge-on.
-        const spanAxis = V(side * 0.74, 0.56, -0.38).normalize();
+        const spanAxis = V(side * 0.72, 0.58, -0.52).normalize();
         let upAxis = V(side * -0.16, 0.46, 0.87).normalize();
         upAxis = upAxis.sub(spanAxis.clone().multiplyScalar(upAxis.dot(spanAxis))).normalize();
         const faceN = new THREE.Vector3().crossVectors(spanAxis, upAxis);
@@ -2064,19 +2064,38 @@ function buildFeature(
         orientBasis(skinG, base, spanAxis, upAxis);
         part.add('secondary', skinG);
 
-        // A lighter inner panel: the wing is not one flat colour, and the
-        // value break is what gives it depth at thumbnail size.
+        // Coverts: a lighter band hugging the leading edge. The wing is not
+        // one flat colour, and this value step is what gives it depth at
+        // thumbnail size -- but it has to follow the arm. Floating it out in
+        // the middle of the membrane just puts a pale blob on the wing.
         const innerPanel: Array<[number, number]> = [
-          [0.03 * S, -0.02 * C],
-          [elbow[0], elbow[1] * 0.5],
-          [wrist[0] * 0.94, wrist[1] * 0.36],
-          [wrist[0] * 0.86, -0.42 * C],
-          [elbow[0] * 0.92, -0.66 * C],
-          [0.05 * S, -0.34 * C],
+          [0.02 * S, -0.03 * C],
+          [elbow[0], elbow[1] * 0.62],
+          [wrist[0] * 0.96, wrist[1] * 0.52],
+          [wrist[0] * 0.90, -0.26 * C],
+          [elbow[0] * 0.94, -0.46 * C],
+          [0.04 * S, -0.30 * C],
         ];
-        const panelG = splinePlate(innerPanel, C * 0.075, C * 0.026);
-        orientBasis(panelG, base.clone().addScaledVector(faceN, C * 0.030), spanAxis, upAxis);
-        part.add('belly', panelG);
+        const panelG = splinePlate(innerPanel, C * 0.070, C * 0.024);
+        orientBasis(panelG, base.clone().addScaledVector(faceN, C * 0.028), spanAxis, upAxis);
+        part.add('primary', panelG);
+
+        // One pale flash between the two innermost fingers -- a single bright
+        // shape reads far better than a whole pale half-wing.
+        {
+          const a = tips[tips.length - 1];
+          const b = innerTip;
+          const sc = scallop(a, b, elbow, 0.82);
+          const inset = (q: [number, number], k: number) =>
+            [elbow[0] + (q[0] - elbow[0]) * k, elbow[1] + (q[1] - elbow[1]) * k] as [number, number];
+          const flashG = splinePlate(
+            [inset(a, 0.34), a, sc, b, inset(b, 0.34)],
+            C * 0.062,
+            C * 0.022,
+          );
+          orientBasis(flashG, base.clone().addScaledVector(faceN, C * 0.016), spanAxis, upAxis);
+          part.add('belly', flashG);
+        }
 
         // --- bones ------------------------------------------------------
         const boneTube = (a: [number, number], b: [number, number], r0: number, r1: number) => {
