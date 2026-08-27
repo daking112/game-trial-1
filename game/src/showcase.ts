@@ -32,20 +32,20 @@ engine.scene.fog = null;
 {
   const pmrem = new THREE.PMREMGenerator(engine.renderer);
   engine.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  engine.scene.environmentIntensity = 0.42;
+  engine.scene.environmentIntensity = 0.78;
   pmrem.dispose();
 }
 
 const floor = new THREE.Mesh(
-  new THREE.CylinderGeometry(14, 14, 0.2, 64),
-  new THREE.MeshStandardMaterial({ color: '#6f7a85', roughness: 0.95, metalness: 0 }),
+  new THREE.CylinderGeometry(24, 24, 0.2, 64),
+  new THREE.MeshStandardMaterial({ color: '#7e8892', roughness: 0.95, metalness: 0 }),
 );
 floor.position.y = -0.1;
 floor.receiveShadow = true;
 engine.scene.add(floor);
 
 // Three-point rig: warm key, cool fill, rim to separate from the backdrop.
-const key = new THREE.DirectionalLight('#fff3e0', 2.0);
+const key = new THREE.DirectionalLight('#fff3e0', 2.7);
 key.position.set(5, 8, 6);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
@@ -57,26 +57,45 @@ key.shadow.bias = -0.0006;
 key.shadow.normalBias = 0.02;
 engine.scene.add(key);
 
-const fill = new THREE.DirectionalLight('#bcd8ff', 0.45);
+const fill = new THREE.DirectionalLight('#bcd8ff', 0.80);
 fill.position.set(-6, 3, 4);
 engine.scene.add(fill);
 
-const rim = new THREE.DirectionalLight('#ffffff', 1.1);
+const rim = new THREE.DirectionalLight('#ffffff', 1.6);
 rim.position.set(-3, 5, -8);
 engine.scene.add(rim);
 
-engine.scene.add(new THREE.HemisphereLight('#cfe3ff', '#6b6355', 0.22));
+engine.scene.add(new THREE.HemisphereLight('#cfe3ff', '#7b7365', 0.42));
 
-// Lay the roster out in a line, facing camera.
+// Lay the roster out in a line. Spacing is proportional to how much room
+// each creature actually needs, so the 3.4m stag does not stand on the 0.95m
+// sprout, and the row still reads as one composition.
 const ids = SPECIES_ORDER;
-const spacing = 3.2;
 const creatures: Creature[] = [];
+// Three-quarter view, as the reference artwork is presented. A serpent's
+// S-curve and a quadruped's length simply do not exist head-on.
+const YAW = -0.62;
+
+const footprint = ids.map((id) => Math.max(1.9, Math.min(3.0, SPECIES[id].shape.height * 0.95)));
+const gaps = footprint.map((w, i) => (i === 0 ? 0 : (footprint[i - 1] + w) * 0.5 + 0.15));
+const cum: number[] = [];
+let acc = 0;
+for (let i = 0; i < ids.length; i++) {
+  acc += gaps[i];
+  cum.push(acc);
+}
+// Normalise the row to the width the fixed `lineup` camera actually sees.
+const SPAN = 12.4;
+const k = cum[cum.length - 1] > 0 ? SPAN / cum[cum.length - 1] : 1;
+for (let i = 0; i < cum.length; i++) cum[i] *= k;
+const centre = cum[cum.length - 1] / 2;
 
 ids.forEach((id, i) => {
   const c = new Creature(id, { phase: i * 0.37 });
-  c.group.position.set((i - (ids.length - 1) / 2) * spacing, 0, 0);
-  // Face the camera. Creature forward is +Z, and the camera looks down -Z.
-  c.group.rotation.y = 0;
+  // Pushed toward camera so the fixed `lineup` shot frames the row tightly
+  // rather than leaving two thirds of the plate as empty backdrop.
+  c.group.position.set(cum[i] - centre, 0, 2.0);
+  c.group.rotation.y = YAW;
   engine.scene.add(c.group);
   creatures.push(c);
 });
@@ -85,8 +104,9 @@ engine.onUpdate((dt, elapsed) => {
   for (const c of creatures) c.update(dt, elapsed);
 });
 
-// Slightly under 1.0 so bright creature palettes keep their top-end detail.
-engine.renderer.toneMappingExposure = 0.85;
+// The art direction is bright and high-key; a dark plate flattens every
+// palette into the same muddy mid-band and hides the value blocking entirely.
+engine.renderer.toneMappingExposure = 1.06;
 
 engine.camera.position.set(0, 2.6, 12);
 engine.camera.lookAt(0, 1.1, 0);
@@ -98,8 +118,11 @@ engine.start();
   const c = creatures[i];
   if (!c) return;
   const p = c.group.position;
-  engine.camera.position.set(p.x + 0.9, 1.5, p.z + 3.4);
-  engine.camera.lookAt(p.x, c.height * 0.55, p.z);
+  // Frame to the creature's own size rather than a fixed distance, so a
+  // 0.95m sprout and a 3.4m stag both fill the portrait.
+  const d = c.height * 1.85 + 0.9;
+  engine.camera.position.set(p.x + d * 0.30, c.height * 0.66, p.z + d);
+  engine.camera.lookAt(p.x, c.height * 0.52, p.z);
   engine.camera.updateMatrixWorld(true);
 };
 (window as unknown as { __species: string[] }).__species = ids.map((i) => SPECIES[i].name);
