@@ -13,8 +13,13 @@
  *   - Silhouette is owned by proportion, not by accessories: neck length,
  *     limb length and where the mass sits.
  *   - Two or three colour blocks, no more. Primary / belly / dark accent.
- *   - Scale is a design tool. The roster runs 0.95m to 3.4m and the steps
- *     between neighbours are deliberate, not arbitrary.
+ *   - **Scale is a rule, not a taste call.** The roster splits into two
+ *     bands and nothing sits between them: stage 1 runs 1.05m to 1.95m,
+ *     stage 2 runs 2.90m to 3.40m. Every evolution is therefore a visible
+ *     jump in *class*, not a percentage, which is how the reference
+ *     franchise separates a starter from a fully-evolved heavy. Within a
+ *     band the order is by role -- the sprout is the smallest thing on the
+ *     roster, the brawler the biggest stage 1.
  */
 
 export type Element = 'Verdant' | 'Ember' | 'Tide' | 'Storm' | 'Iron';
@@ -357,7 +362,7 @@ export const SPECIES: Record<string, Species> = {
       glow: '#c4ff74',
     },
     shape: {
-      height: 0.95,
+      height: 1.05,
       plan: 'sproutling',
       hide: 'fur',
       crouch: 0.15,
@@ -505,7 +510,7 @@ export const SPECIES: Record<string, Species> = {
       glow: '#ff7a18',
     },
     shape: {
-      height: 2.15,
+      height: 1.85,
       plan: 'brawler',
       hide: 'fur',
       crouch: 0.10,
@@ -580,13 +585,16 @@ export const SPECIES: Record<string, Species> = {
       glow: '#7ff0ff',
     },
     shape: {
-      height: 2.05,
+      height: 1.95,
       plan: 'serpent',
       hide: 'scale',
       crouch: 0.0,
       pose: {
-        bodyYaw: 0.34, bodyRoll: -0.06,
-        neckPitch: -0.20, headYaw: -0.44, headPitch: -0.16, headRoll: 0.12,
+        // No roll. A legless creature has nothing to balance on, so any tilt
+        // of the whole body reads as falling over rather than as attitude --
+        // the previous pass leaned it and it looked propped.
+        bodyYaw: 0.30,
+        neckPitch: -0.16, headYaw: -0.38, headPitch: -0.22, headRoll: 0.06,
       },
       fangs: 0,
       seed: 404,
@@ -595,46 +603,59 @@ export const SPECIES: Record<string, Species> = {
         radius: 0.12, height: 0.14, belly: 0, chest: 0,
         depth: 1, lean: 0, shoulderY: 0.5, shoulderX: 1,
       },
-      neck: { segments: 2, radiusBase: 0.108, radiusTop: 0.085, arch: -0.10 },
+      neck: { segments: 2, radiusBase: 0.135, radiusTop: 0.105, arch: -0.10 },
       head: {
-        y: 0.905, z: 0.245, radius: 0.140, width: 1.10, depth: 1.42,
-        crownFlat: 0.48, brow: 0.42, cheek: 0.22, jaw: 0.30, tilt: 0.20,
-        snout: { length: 0.185, radius: 0.082, tipRadius: 0.048, drop: 0.012, keel: 0.42, spread: 1.25 },
+        y: 0.938, z: 0.238, radius: 0.138, width: 0.98, depth: 1.62,
+        crownFlat: 0.62, brow: 0.66, cheek: 0.14, jaw: 0.22, tilt: 0.12,
+        snout: { length: 0.290, radius: 0.078, tipRadius: 0.036, drop: 0.006, keel: 0.68, spread: 1.06 },
       },
       eye: {
-        radius: 0.062, spacing: 0.110, y: 0.955, z: 0.290,
-        splay: 0.66, lid: 0.16, lidTilt: -0.08, mask: 0.4,
+        radius: 0.050, spacing: 0.096, y: 0.980, z: 0.300,
+        splay: 0.74, lid: 0.38, lidTilt: 0.20, mask: 0.85,
       },
       arms: null,
       legs: null,
       serpent: {
-        // A rearing S out of a long ground coil. The horizontal run matters as
-        // much as the height: nothing else on the roster is wider than it is
-        // tall, and that alone identifies it in a thumbnail row.
+        /*
+         * A rearing S over a ground coil.
+         *
+         * The rule that fixes a serpent: the *rearing column stays on the
+         * centreline*. The previous path let x drift across the whole rise,
+         * which put the head outboard of the coil and made the creature read
+         * as tipping over -- leaning, not rearing. The S now lives in the
+         * sagittal plane (y/z), and all the lateral interest comes from the
+         * coil, which is where a real snake keeps it.
+         */
         path: [
-          [0.000, 0.780, 0.230],
-          [0.005, 0.640, 0.150],
-          [-0.020, 0.490, 0.045],
-          [-0.070, 0.340, -0.075],
-          [-0.090, 0.200, -0.215],
-          [-0.020, 0.105, -0.350],
-          [0.150, 0.078, -0.415],
-          [0.340, 0.082, -0.360],
-          [0.480, 0.100, -0.205],
-          [0.545, 0.130, -0.010],
-          [0.520, 0.175, 0.180],
-          [0.400, 0.230, 0.320],
-          [0.230, 0.290, 0.375],
+          [0.000, 0.826, 0.238],
+          [0.004, 0.732, 0.142],
+          [0.010, 0.632, 0.032],
+          [0.012, 0.528, -0.058],
+          [0.004, 0.424, -0.112],
+          [-0.014, 0.322, -0.104],
+          [-0.042, 0.228, -0.040],
+          [-0.066, 0.152, 0.074],
+          [-0.056, 0.104, 0.202],
+          [0.036, 0.092, 0.304],
+          [0.172, 0.092, 0.340],
+          [0.306, 0.096, 0.278],
+          [0.382, 0.102, 0.154],
+          [0.392, 0.114, 0.012],
+          [0.336, 0.134, -0.114],
+          [0.222, 0.166, -0.204],
+          [0.082, 0.214, -0.246],
         ],
-        radius: 0.118, swell: 0.20, segments: 12,
-        fins: 12, finHeight: 0.125, finEnd: 0.58,
-        scutes: 16,
+        // Thick. A serpent whose only mass is its own length reads as rope;
+        // the reference art gives it a barrel through the middle.
+        radius: 0.150, swell: 0.26, segments: 14,
+        fins: 14, finHeight: 0.108, finEnd: 0.60,
+        scutes: 20,
       },
       tail: null,
       features: [
-        { kind: 'finEars', length: 0.26, width: 0.150, splay: 0.85 },
-        { kind: 'pectoralFins', length: 0.26, width: 0.145, at: 0.16 },
-        { kind: 'collar', radius: 0.112, tube: 0.024 },
+        { kind: 'finEars', length: 0.30, width: 0.170, splay: 0.90 },
+        { kind: 'pectoralFins', length: 0.30, width: 0.165, at: 0.19 },
+        { kind: 'collar', radius: 0.135, tube: 0.028 },
         { kind: 'cheekVents', count: 3, radius: 0.020 },
       ],
     },
@@ -666,7 +687,7 @@ export const SPECIES: Record<string, Species> = {
       glow: '#bfe9ff',
     },
     shape: {
-      height: 1.45,
+      height: 1.40,
       plan: 'drifter',
       hide: 'smooth',
       crouch: 0.0,
@@ -734,7 +755,7 @@ export const SPECIES: Record<string, Species> = {
       glow: '#ffd36e',
     },
     shape: {
-      height: 2.80,
+      height: 2.90,
       plan: 'raptor',
       hide: 'plate',
       crouch: 0.30,
