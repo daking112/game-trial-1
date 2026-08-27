@@ -215,6 +215,21 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // ambient-only areas where N.L carries no information.
           col *= mix(0.80, 1.04, vGOcc);
 
+          // ---- verge halo ------------------------------------------------
+          // The path is the one piece of terrain the player has to be able to
+          // trace at a glance from any camera, and a brown ribbon on green
+          // ground is a hue difference, not a value difference -- at overview
+          // scale it disappears. A pale dry band just outside the worn dirt
+          // gives the route a light edge against both the dark road and the
+          // mid-green field, which is the same trick a tower-defense map uses
+          // when it outlines its track. It is *strengthened* with distance to
+          // cancel the detail LOD, so the far half of the loop stays as legible
+          // as the near half.
+          float vergeD = vGRoad + (gnFbm2(w * 0.22 + vec2(6.1, -2.7)) - 0.5) * 1.7;
+          float verge = smoothstep(ROAD_INNER - 0.15, ROAD_INNER + 1.25, vergeD)
+                      * (1.0 - smoothstep(ROAD_OUTER - 0.6, ROAD_OUTER + 1.7, vergeD));
+          col = mix(col, GRASS_DRY, verge * mix(0.34, 0.60, smoothstep(25.0, 95.0, viewDist)));
+
           // Collapse to mass tone with distance. Without this the apron's
           // ridgelines carry the same grass/rock mottling as the ground under
           // the player's feet, and the eye reads them as nearby hillocks.

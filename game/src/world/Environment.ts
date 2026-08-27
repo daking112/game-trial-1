@@ -31,7 +31,12 @@ export interface EnvironmentOptions {
  * a dim cool bounce from the opposite quarter puts a terminator back in.
  */
 const ART = {
-  azimuth: 156,
+  // Near due-west. The bearing matters as much as the elevation: at 156 the
+  // shadows fell away from the play camera and hid behind their own casters, so
+  // the low sun bought nothing. Raking across the frame instead, every tree
+  // lays a shadow the player can actually see, and those shadows are a free
+  // read-out of the ground's shape and of what is standing on it.
+  azimuth: 194,
   elevation: 30,
   keyColor: '#ffe2ba',
   keyIntensity: 5.4,

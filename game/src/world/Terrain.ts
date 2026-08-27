@@ -316,7 +316,8 @@ export class Terrain {
     const rings: Array<[number, number]> = [
       [1.00, 0.00], [1.06, 0.00], [1.16, 0.12], [1.32, 0.38],
       [1.58, 0.68], [1.95, 0.88], [2.45, 1.00], [3.05, 1.00],
-      [3.80, 1.00], [4.60, 1.00], [5.55, 1.00], [6.60, 1.00],
+      [3.70, 1.00], [4.35, 1.00], [5.05, 1.00], [5.75, 1.00],
+      [6.20, 1.00], [6.60, 1.00],
     ];
 
     // Border of the plane, walked once in order.
@@ -404,15 +405,27 @@ export class Terrain {
   private distantRelief(x: number, z: number): number {
     const half = this.size * 0.5;
     const r = Math.hypot(x, z);
-    const t = Math.pow(smoothstep(half * 1.15, half * 3.4, r), 1.35);
+    const t = Math.pow(smoothstep(half * 1.10, half * 2.60, r), 1.2);
     if (t <= 0) return 0;
 
-    const coarse = ridged2(x * 0.0105, z * 0.0105, this.seed + 301, 4);
-    const fine = ridged2(x * 0.028, z * 0.028, this.seed + 617, 3);
-    const peaks = coarse * 0.70 + fine * 0.30;
+    // The floor genuinely falls away. Without this the middle distance is a
+    // shelf at map level and the eye reads it as more playfield rather than as
+    // a valley the map sits above.
+    let h = -16.0 * t;
 
-    // Floor falls away; ridges climb out of it.
-    return t * (-11.0 + 9.0 + 40.0 * Math.pow(peaks, 1.7));
+    // Foothills: enough incident to stop the band between the map edge and the
+    // mountains from being an empty gradient, small enough not to compete.
+    const mtn = Math.pow(smoothstep(half * 1.9, half * 4.6, r), 1.1);
+    h += (fbm2(x * 0.018, z * 0.018, this.seed + 707, 3) - 0.5) * 11.0 * t * (1 - mtn);
+
+    // Two octaves, not four. Four gives a dozen small crossings on the skyline
+    // that stack up as torn paper; two gives two or three real ranges with
+    // saddles between them, which is what actually reads as distance.
+    const coarse = ridged2(x * 0.0052, z * 0.0052, this.seed + 301, 2);
+    const fine = ridged2(x * 0.0150, z * 0.0150, this.seed + 617, 2);
+    const peaks = Math.pow(coarse, 1.8) * 0.85 + Math.pow(fine, 2.4) * 0.15;
+
+    return h + mtn * 85.0 * peaks;
   }
 
   /* --------------------------------------------------------------- sampling */
