@@ -40,7 +40,7 @@ export const SHOTS = {
   codex:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 6.0,
                before: 'window.__codex.toggle()' },
   // Selects the first placed tower so the inspector panel is visible.
-  inspect:   { position: [-8, 7, 8], target: [-13, 1, -5], fov: 40, advance: 5.0,
+  inspect:   { position: [-9.5, 3.4, -0.5], target: [-14, 1.3, -6], fov: 38, advance: 5.0,
                before: 'window.__selectFirstTower && window.__selectFirstTower()' },
 };
 

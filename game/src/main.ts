@@ -168,30 +168,78 @@ engine.scene.add(battle.group);
  * creature stays unaware it is being used as a tower; turning to face a target
  * is added here rather than baked into the creature itself.
  */
+/**
+ * Ground pad placed under every creature.
+ *
+ * Creatures are small and often the same green as the undergrowth they stand
+ * in; without a pad the player cannot read their own board at a glance, which
+ * is the one thing a tower defense must never take away. The pad reads as a
+ * cleared patch of earth ringed in the creature's element colour.
+ */
+function creaturePad(accent: THREE.ColorRepresentation): THREE.Group {
+  const pad = new THREE.Group();
+
+  const earth = new THREE.Mesh(
+    new THREE.CircleGeometry(1.05, 40).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({
+      color: '#6b5a3e', roughness: 0.98, metalness: 0,
+      transparent: true, opacity: 0.92,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    }),
+  );
+  earth.receiveShadow = true;
+  pad.add(earth);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.02, 1.2, 44).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({
+      color: accent, transparent: true, opacity: 0.55, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    }),
+  );
+  pad.add(ring);
+
+  pad.position.y = 0.04;
+  return pad;
+}
+
 function creatureTower(speciesId: string): TowerVisual & { speciesId: string; creature: Creature } {
   const creature = new Creature(speciesId);
   let turn = creature.group.rotation.y;
 
+  // The pad is a sibling under a wrapper so the creature can turn to face
+  // targets without spinning the pad with it.
+  const wrapper = new THREE.Group();
+  const pad = creaturePad(SPECIES[speciesId].palette.accent);
+  pad.scale.setScalar(1.35);
+  wrapper.add(pad);
+  const inner = new THREE.Group();
+  // Creatures are authored at roughly life scale, which loses them against
+  // waist-high undergrowth. The board must read at a glance, so they are
+  // deliberately oversized relative to the world -- the same cheat Bloons and
+  // most tower defenses use for their towers.
+  inner.scale.setScalar(1.75);
+  inner.add(creature.group);
+  wrapper.add(inner);
+
   return {
     speciesId,
     creature,
-    group: creature.group,
+    group: wrapper,
     update(dt, elapsed) {
       creature.update(dt, elapsed);
       // Ease toward the desired facing so aim reads as a turn, not a snap.
-      const cur = creature.group.rotation.y;
+      const cur = inner.rotation.y;
       let delta = turn - cur;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
-      creature.group.rotation.y = cur + delta * (1 - Math.exp(-dt * 9));
+      inner.rotation.y = cur + delta * (1 - Math.exp(-dt * 9));
     },
     playAttack() { creature.playAttack(); },
     faceTarget(worldPos) {
-      turn = Math.atan2(
-        worldPos.x - creature.group.position.x,
-        worldPos.z - creature.group.position.z,
-      );
+      turn = Math.atan2(worldPos.x - wrapper.position.x, worldPos.z - wrapper.position.z);
     },
+    dispose() { creature.dispose(); },
   };
 }
 
