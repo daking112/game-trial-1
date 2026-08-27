@@ -743,7 +743,7 @@ export const SPECIES: Record<string, Species> = {
         chestTwist: -0.14, neckPitch: 0.10,
         headYaw: 0.40, headPitch: -0.06, headRoll: 0.08,
         legLead: 0.110, stance: 0.020,
-        wingL: [-0.10, 0.16, -0.30], wingR: [0.20, -0.10, 0.14],
+        wingL: [0.04, 0.22, -0.10], wingR: [-0.02, -0.14, 0.06],
       },
       fangs: 0,
       seed: 606,
@@ -771,7 +771,7 @@ export const SPECIES: Record<string, Species> = {
       },
       tail: { length: 0.46, radius: 0.055, rise: 0.02, sweep: 0.0, segments: 5, tip: 'blade', wave: 0.6 },
       features: [
-        { kind: 'wings', span: 1.18, chord: 0.52, fingers: 5, droop: 0.10, plated: true },
+        { kind: 'wings', span: 1.24, chord: 0.56, fingers: 4, droop: 0.05, plated: true },
         { kind: 'shoulderCogs', radius: 0.100, teeth: 11 },
         { kind: 'horns', length: 0.24, radius: 0.030, spread: 0.062, pitch: -0.72, bend: 0.30 },
         { kind: 'backPlates', count: 5, size: 0.075 },

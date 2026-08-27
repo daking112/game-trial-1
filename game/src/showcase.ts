@@ -76,28 +76,50 @@ const creatures: Creature[] = [];
 // S-curve and a quadruped's length simply do not exist head-on.
 const YAW = -0.62;
 
-const footprint = ids.map((id) => Math.max(1.9, Math.min(3.0, SPECIES[id].shape.height * 0.95)));
-const gaps = footprint.map((w, i) => (i === 0 ? 0 : (footprint[i - 1] + w) * 0.5 + 0.15));
-const cum: number[] = [];
-let acc = 0;
-for (let i = 0; i < ids.length; i++) {
-  acc += gaps[i];
-  cum.push(acc);
-}
-// Normalise the row to the width the fixed `lineup` camera actually sees.
-const SPAN = 12.4;
-const k = cum[cum.length - 1] > 0 ? SPAN / cum[cum.length - 1] : 1;
-for (let i = 0; i < cum.length; i++) cum[i] *= k;
-const centre = cum[cum.length - 1] / 2;
-
-ids.forEach((id, i) => {
+// Measured, not guessed. A creature's *drawn* width is what has to be
+// packed -- a raptor with a 3m wingspan needs more room than a 3.4m stag --
+// and the only reliable source for that is the built mesh's own bounds.
+const built = ids.map((id, i) => {
   const c = new Creature(id, { phase: i * 0.37 });
-  // Pushed toward camera so the fixed `lineup` shot frames the row tightly
-  // rather than leaving two thirds of the plate as empty backdrop.
-  c.group.position.set(cum[i] - centre, 0, 2.0);
   c.group.rotation.y = YAW;
-  engine.scene.add(c.group);
-  creatures.push(c);
+  c.group.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(c.group);
+  // Clamp against height: a wingspan may overhang a neighbour's airspace a
+  // little -- that reads as a group shot -- but it must not push the row so
+  // wide that every creature becomes a thumbnail.
+  const edge = i === 0 || i === ids.length - 1;
+  const half = edge
+    ? (b.max.x - b.min.x) * 0.5
+    : Math.min((b.max.x - b.min.x) * 0.5, c.height * 0.78);
+  // Idle animation swings limbs and wings past the measured rest bounds, so
+  // the two creatures that own the plate edges get slack to swing into.
+  return { c, half: Math.max(0.5, half) + (edge ? 0.55 : 0), cx: (b.max.x + b.min.x) * 0.5 };
+});
+
+// Pack left to right with a constant air gap, then centre the row.
+const GAP = 0.28;
+const xs: number[] = [];
+let cursor = 0;
+for (const b of built) {
+  cursor += b.half;
+  xs.push(cursor - b.cx);
+  cursor += b.half + GAP;
+}
+const rowWidth = cursor - GAP;
+
+// The `lineup` camera is fixed, so the row is pushed to whatever depth makes
+// it fill the plate: solve for the z where the frustum is just wide enough.
+const CAM = new THREE.Vector3(0, 2.6, 12);
+const FOV = 42;
+const aspect = 2.0; // the lineup plate is shot 2:1
+const halfW = Math.tan((FOV * Math.PI) / 360) * aspect;
+const need = (rowWidth * 0.5) / (halfW * 0.985);
+const rowZ = CAM.z - Math.max(8.0, need);
+
+built.forEach((b, i) => {
+  b.c.group.position.set(xs[i] - rowWidth * 0.5, 0, rowZ);
+  engine.scene.add(b.c.group);
+  creatures.push(b.c);
 });
 
 engine.onUpdate((dt, elapsed) => {
