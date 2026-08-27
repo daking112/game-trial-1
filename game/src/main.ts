@@ -17,6 +17,7 @@ import { GameAudio } from './audio/Audio';
 import { Collection, statMultipliers, EVOLUTION_LEVEL, evolutionBonus } from './meta/Progression';
 import { CollectionPanel } from './ui/CollectionPanel';
 import { TowerPanel } from './ui/TowerPanel';
+import { EndScreen } from './ui/EndScreen';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app missing');
@@ -87,6 +88,9 @@ for (const ev of ['pointerdown', 'keydown'] as const) {
   window.addEventListener(ev, () => audio.resume(), { once: true });
 }
 
+const startingGold = 120;
+const endScreen = new EndScreen(hudHost, () => window.location.reload());
+
 const particles = new Particles();
 engine.scene.add(particles.points);
 
@@ -155,8 +159,24 @@ const battle = new Battle(track, {
   },
 
   onPhase: (p) => {
-    if (p === 'won') hud.banner('Gearwood holds!', 'good', 99);
-    if (p === 'lost') hud.banner('The Thicket falls', 'bad', 99);
+    if (p !== 'won' && p !== 'lost') return;
+    hud.banner(p === 'won' ? 'Gearwood holds!' : 'The Thicket falls', p === 'won' ? 'good' : 'bad', 2.4);
+
+    const best = collection.all()
+      .filter((e) => e.kills > 0)
+      .sort((a, b) => b.kills - a.kills)[0];
+
+    endScreen.show(p === 'won', {
+      wavesCleared: p === 'won' ? WAVES.length : Math.max(0, battle.waveIndex - 1),
+      totalWaves: WAVES.length,
+      livesLeft: battle.lives,
+      goldEarned: Math.max(0, battle.gold - startingGold),
+      caught: collection.caughtCount,
+      totalSpecies: Object.keys(SPECIES).length,
+      bestCreature: best
+        ? { name: SPECIES[best.speciesId]?.name ?? best.speciesId, kills: best.kills, level: best.level }
+        : undefined,
+    });
   },
 });
 engine.scene.add(battle.group);
@@ -450,6 +470,7 @@ engine.onUpdate((dt, elapsed) => {
 
   updateHover();
   hud.update(dt);
+  endScreen.update(dt);
   hud.setStats(battle.lives, battle.gold, battle.waveIndex);
   hud.setAffordable(COSTS, battle.gold);
   towerPanel.refresh(battle.gold);
@@ -486,6 +507,13 @@ engine.start();
 (window as unknown as { __battle: Battle; __codex: CollectionPanel }).__battle = battle;
 (window as unknown as { __codex: CollectionPanel }).__codex = codex;
 (window as unknown as { __collection: Collection }).__collection = collection;
+
+// Test hook: force a terminal phase so the end screen can be captured.
+(window as unknown as { __forceEnd: (won: boolean) => void }).__forceEnd = (won: boolean) => {
+  battle.lives = won ? battle.lives : 0;
+  battle.waveIndex = won ? WAVES.length : 6;
+  (battle as unknown as { setPhase(p: string): void }).setPhase(won ? 'won' : 'lost');
+};
 
 // Test hook: select the first placed tower so the inspector can be captured.
 (window as unknown as { __selectFirstTower: () => void }).__selectFirstTower = () => {
