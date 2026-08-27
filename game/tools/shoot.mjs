@@ -29,6 +29,11 @@ export const SHOTS = {
   low:       { position: [-14, 2.2, 8], target: [4, 1.2, -4], fov: 50, advance: 2.0 },
   topdown:   { position: [0, 62, 0.1],  target: [0, 0, 0],    fov: 40, advance: 2.0 },
   closeup:   { position: [4, 2.6, 8],   target: [2, 1.2, 2],  fov: 34, advance: 2.0 },
+  // Tight on a placed creature, to judge face and surface detail.
+  creature:  { position: [-11.5, 2.0, -3.4], target: [-14, 1.0, -6], fov: 30, advance: 3.0 },
+  // Showcase shots (use --url .../showcase.html).
+  lineup:    { position: [0, 2.6, 12],  target: [0, 1.1, 0],  fov: 42, advance: 2.5 },
+  portrait:  { position: [0, 1.5, 4.2], target: [0, 0.9, 0],  fov: 30, advance: 2.5 },
   // Mid-combat: far enough into a wave that projectiles and impacts are live.
   combat:    { position: [-6, 9, 16],   target: [-4, 1, 0],   fov: 44, advance: 9.0 },
   // Opens the codex overlay; only meaningful with --dom.
