@@ -857,7 +857,18 @@ function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string,
       g.scale(spread, 1 / Math.sqrt(spread), 1);
       g.translate(0, base.y, 0);
     }
-    head.add(sn.keel > 0.5 ? 'accent' : 'belly', g);
+    /*
+     * The muzzle is body colour.
+     *
+     * Painting the whole snout tube in the accent the moment `keel` crossed
+     * a threshold gave the serpents a gold carrot bolted to a cream sock --
+     * two saturated blocks on the one part of the creature a player actually
+     * looks at. In the reference artwork the muzzle is always the body
+     * colour; the light value belongs to the chin and throat, and the accent
+     * to a ridge along the top. Only a genuinely hard beak takes the accent
+     * across its whole length.
+     */
+    head.add(sn.keel > 0.85 ? 'accent' : 'primary', g);
 
     if (sn.keel > 0.35) {
       const keel = plate(
@@ -872,7 +883,7 @@ function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string,
       );
       keel.rotateY(Math.PI / 2);
       head.add(
-        sn.keel > 0.5 ? 'accent' : 'primary',
+        sn.keel > 0.85 ? 'secondary' : 'accent',
         xf(keel, { pos: [0, base.y + sn.radius * 0.72, base.z + hd.radius * 0.02] }),
       );
     }
@@ -905,7 +916,7 @@ function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string,
     );
 
     const chin = blob({ detail: 3, radius: 1, profile: taper(0.62) });
-    chin.scale(mouthW * 1.04, (sn.length + hd.radius * 0.26) * 0.5, sn.radius * 0.46);
+    chin.scale(mouthW * 0.98, (sn.length + hd.radius * 0.20) * 0.5, sn.radius * 0.40);
     chin.rotateX(-Math.PI / 2);
     jaw.add(
       'belly',
@@ -963,6 +974,7 @@ function buildSerpentBody(sp: Species, hips: Part, _materials: Record<string, TH
 function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], lag: number[]) {
   const sr = sp.shape.serpent!;
   const curve = serpentCurve(sp);
+  const arcLen = curve.getLength();
   const n = sr.segments;
 
   let parent: Part = hips;
@@ -990,8 +1002,11 @@ function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], 
       const side = new THREE.Vector3().crossVectors(tan, UP).normalize();
       const down = new THREE.Vector3().crossVectors(side, tan).normalize().multiplyScalar(-1);
       const g = blob({ detail: 2, radius: 1, profile: (y) => ({ w: 1 - 0.25 * Math.abs(y) }) });
-      g.scale(rr * 0.72, rr * 0.34, (1 / sr.scutes) * 2.2);
-      orientFwd(g, p.clone().addScaledVector(down, rr * 0.74), tan);
+      // Sized off the curve's real arc length, not off unit space: with a
+      // fixed guess the plates end up short of each other and read as loose
+      // pale blobs stuck to the belly rather than as a continuous ladder.
+      g.scale(rr * 0.80, rr * 0.30, (arcLen / sr.scutes) * 0.62);
+      orientFwd(g, p.clone().addScaledVector(down, rr * 0.80), tan);
       seg.add('belly', g);
     }
 
