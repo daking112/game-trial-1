@@ -232,6 +232,27 @@ export class Hud {
         box-shadow: 0 6px 0 #5b7793, 0 10px 20px rgba(0,0,0,.4);
         min-width: 62px;
       }
+
+      /* Narrow viewports: the roster wrapped into a vertical column that ran
+         off the top of the screen. Stack the bar instead and let the roster
+         scroll horizontally, which is how every mobile game solves this. */
+      @media (max-width: 760px) {
+        .hud-bottom { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px; }
+        .roster {
+          flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+          padding-bottom: 4px; scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
+        }
+        .roster::-webkit-scrollbar { display: none; }
+        .card { width: 78px; flex: 0 0 auto; padding: 8px 6px 6px; }
+        .card-glyph { width: 34px; height: 34px; }
+        .card-name { font-size: 11px; }
+        .controls { justify-content: stretch; }
+        .controls .btn { flex: 1; padding: 12px 10px; font-size: 14px; }
+        .hud-top { padding: 10px; gap: 7px; }
+        .stat { padding: 6px 12px; font-size: 15px; }
+        .hud-banner { font-size: 19px; padding: 10px 20px; margin-top: 4vh; }
+      }
     `;
     document.head.appendChild(style);
   }

@@ -30,6 +30,10 @@ export class CameraRig {
   private lastY = 0;
   private moved = 0;
 
+  /** Live touch points, keyed by pointerId, for pinch and two-finger pan. */
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  private pinchDist = 0;
+
   private readonly opts: Required<CameraRigOptions>;
 
   constructor(
@@ -48,8 +52,13 @@ export class CameraRig {
     dom.addEventListener('pointerdown', this.onDown);
     dom.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onUp);
     dom.addEventListener('wheel', this.onWheel, { passive: false });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Without this the browser claims the gesture and scrolls the page
+    // instead of delivering pointermove, which makes touch input dead.
+    dom.style.touchAction = 'none';
   }
 
   /** True if the last pointer gesture was a drag rather than a click. */
@@ -58,6 +67,16 @@ export class CameraRig {
   }
 
   private onDown = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size === 2) {
+        // Second finger down: switch from orbit to pinch/pan and seed the
+        // baseline separation.
+        this.dragging = null;
+        this.pinchDist = this.touchSeparation();
+        return;
+      }
+    }
     // Left-drag orbits, right/middle-drag pans. Matches what players expect
     // from every strategy game.
     this.dragging = e.button === 0 ? 'orbit' : 'pan';
@@ -66,9 +85,58 @@ export class CameraRig {
     this.moved = 0;
   };
 
-  private onUp = () => { this.dragging = null; };
+  private onUp = (e: PointerEvent) => {
+    this.touches.delete(e.pointerId);
+    this.dragging = null;
+  };
+
+  private touchSeparation(): number {
+    const pts = [...this.touches.values()];
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  private touchCentre(): { x: number; y: number } {
+    const pts = [...this.touches.values()];
+    let x = 0, y = 0;
+    for (const p of pts) { x += p.x; y += p.y; }
+    return { x: x / pts.length, y: y / pts.length };
+  }
 
   private onMove = (e: PointerEvent) => {
+    if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
+      const prevCentre = this.touches.size >= 2 ? this.touchCentre() : null;
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (this.touches.size >= 2) {
+        // Pinch to zoom.
+        const sep = this.touchSeparation();
+        if (this.pinchDist > 0 && sep > 0) {
+          this.desired.distance = THREE.MathUtils.clamp(
+            this.desired.distance * (this.pinchDist / sep),
+            this.opts.minDistance,
+            this.opts.maxDistance,
+          );
+        }
+        this.pinchDist = sep;
+
+        // Two-finger drag pans, using the movement of the midpoint.
+        const centre = this.touchCentre();
+        if (prevCentre) {
+          const k = this.distance * 0.0016;
+          const forward = new THREE.Vector3(Math.cos(this.azimuth), 0, Math.sin(this.azimuth));
+          const right = new THREE.Vector3(-forward.z, 0, forward.x);
+          this.desiredTarget.addScaledVector(right, -(centre.x - prevCentre.x) * k);
+          this.desiredTarget.addScaledVector(forward, -(centre.y - prevCentre.y) * k);
+          const b = this.opts.bounds;
+          this.desiredTarget.x = THREE.MathUtils.clamp(this.desiredTarget.x, -b, b);
+          this.desiredTarget.z = THREE.MathUtils.clamp(this.desiredTarget.z, -b, b);
+        }
+        this.moved += 12; // a pinch is never a tap
+        return;
+      }
+    }
+
     if (!this.dragging) return;
     const dx = e.clientX - this.lastX;
     const dy = e.clientY - this.lastY;

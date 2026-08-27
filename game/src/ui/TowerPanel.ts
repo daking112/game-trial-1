@@ -139,6 +139,10 @@ export class TowerPanel {
         background: linear-gradient(180deg, #f0c0a8, #c8896b);
         box-shadow: 0 4px 0 #8a5a44;
       }
+      @media (max-width: 760px) {
+        .tpanel { right: 10px; top: 58px; width: 176px; padding: 10px; }
+        .tpanel-name { font-size: 13.5px; }
+      }
     `;
     document.head.appendChild(st);
   }
