@@ -607,19 +607,19 @@ export const SPECIES: Record<string, Species> = {
       torso: {
         hipY: 0.330, hipZ: -0.020, pitch: 0.28,
         radius: 0.250, height: 0.245, belly: 0.06, chest: 0.86,
-        depth: 0.92, lean: 0.10, shoulderY: 0.78, shoulderX: 1.38, waist: 0.46,
+        depth: 0.92, lean: 0.10, shoulderY: 0.62, shoulderX: 1.38, waist: 0.46,
       },
       neck: { segments: 1, radiusBase: 0.150, radiusTop: 0.108, arch: 0.10, ruff: 0.9 },
       head: {
         // Sunk. The crown barely clears the shoulder line, which is what
         // makes the shoulders look enormous rather than the head look small.
-        y: 0.848, z: 0.190, radius: 0.155, width: 1.16, depth: 1.16,
-        crownFlat: 0.26, brow: 0.86, cheek: 0.62, jaw: 0.74, tilt: 0.16,
+        y: 0.892, z: 0.215, radius: 0.155, width: 1.16, depth: 1.16,
+        crownFlat: 0.26, brow: 0.70, cheek: 0.58, jaw: 0.74, tilt: 0.16,
         snout: { length: 0.135, radius: 0.108, tipRadius: 0.082, drop: 0.030, keel: 0.22, spread: 1.18 },
       },
       eye: {
-        radius: 0.044, spacing: 0.090, y: 0.880, z: 0.268,
-        splay: 0.40, lid: 0.56, lidTilt: 0.40, mask: 1.0,
+        radius: 0.052, spacing: 0.098, y: 0.938, z: 0.318,
+        splay: 0.46, lid: 0.40, lidTilt: 0.42, mask: 1.0,
       },
       arms: {
         upperLength: 0.290, upperRadius: 0.098, lowerLength: 0.270, lowerRadius: 0.082,
@@ -635,11 +635,11 @@ export const SPECIES: Record<string, Species> = {
       tail: { length: 0.30, radius: 0.088, rise: 0.14, sweep: -0.10, segments: 4, tip: 'ember', wave: 0.8 },
       features: [
         { kind: 'stacks', count: 4, height: 0.42, radius: 0.058, spread: 0.215, lean: 0.30 },
-        { kind: 'chestPlate', width: 0.26, height: 0.32, grate: true },
-        { kind: 'horns', length: 0.235, radius: 0.038, spread: 0.116, pitch: -0.66, bend: 0.22 },
+        { kind: 'chestPlate', width: 0.205, height: 0.265, grate: true },
+        { kind: 'horns', length: 0.170, radius: 0.032, spread: 0.132, pitch: -0.88, bend: 0.14 },
         { kind: 'shoulderCogs', radius: 0.130, teeth: 13 },
         { kind: 'backPlates', count: 7, size: 0.105 },
-        { kind: 'mane', count: 13, length: 0.20, spread: 1.0 },
+        { kind: 'mane', count: 9, length: 0.17, spread: 0.9 },
         { kind: 'cheekVents', count: 3, radius: 0.026 },
         { kind: 'bracers', radius: 0.102, width: 0.090 },
         { kind: 'brandMark', radius: 0.062 },

@@ -1330,14 +1330,33 @@ function buildLimb(
     ? hock.clone().add(V(0, -(L.pastern ?? 0) * Math.cos(a3), (L.pastern ?? 0) * Math.sin(a3)))
     : hock;
 
-  // Haunch: a big mass over the hip. Skinny legs on a round body read as
-  // sticks; the haunch is what makes the stance look like it carries weight.
-  const haunch = blob({ detail: 3, radius: 1 });
-  haunch.scale(L.upperRadius * 1.62, L.upperLength * (digi ? 0.78 : 0.95), L.upperRadius * 2.0);
-  part.add(
-    'secondary',
-    xf(haunch, { pos: [root.x + side * L.upperRadius * 0.15, root.y - L.upperLength * 0.26, root.z] }),
+  /*
+   * Haunch: the thigh mass over the hip.
+   *
+   * A plain ellipsoid here reads as a coconut bolted to the body -- a hard
+   * sphere silhouette in a contrasting value, floating clear of the barrel.
+   * Two things fix it. It is a *teardrop*, narrowing to a point where it
+   * meets the hip, so its outline runs into the torso instead of ending in a
+   * curve; and it is aligned to the femur rather than to world up, so it
+   * follows the leg it belongs to.
+   */
+  const femur = knee.clone().sub(root);
+  const femurLen = Math.max(femur.length(), 1e-4);
+  const haunch = blob({
+    detail: 3,
+    radius: 1,
+    profile: (y) => ({
+      w: 1 - 0.46 * Math.max(0, y) - 0.22 * Math.max(0, -y),
+      d: 1 - 0.38 * Math.max(0, y) - 0.16 * Math.max(0, -y),
+    }),
+  });
+  haunch.scale(L.upperRadius * 1.30, femurLen * (digi ? 0.72 : 0.86), L.upperRadius * 1.62);
+  orientUp(
+    haunch,
+    root.clone().addScaledVector(femur, digi ? 0.30 : 0.34).add(V(side * L.upperRadius * 0.06, 0, 0)),
+    femur.clone().negate().normalize(),
   );
+  part.add('secondary', haunch);
 
   part.add(
     'primary',
@@ -1411,9 +1430,24 @@ function buildArm(
       ),
     );
 
-  const deltoid = blob({ detail: 3, radius: 1 });
-  deltoid.scale(L.upperRadius * 1.55, L.upperRadius * 1.62, L.upperRadius * 1.5);
-  upper.add('secondary', xf(deltoid, { pos: [shoulder.x, shoulder.y, shoulder.z] }));
+  // Deltoid, same rule as the haunch: a teardrop that runs into the chest
+  // rather than a ball sitting beside it.
+  const humerus = elbow.clone().sub(shoulder);
+  const deltoid = blob({
+    detail: 3,
+    radius: 1,
+    profile: (y) => ({
+      w: 1 - 0.40 * Math.max(0, y) - 0.20 * Math.max(0, -y),
+      d: 1 - 0.30 * Math.max(0, y) - 0.14 * Math.max(0, -y),
+    }),
+  });
+  deltoid.scale(L.upperRadius * 1.34, Math.max(humerus.length(), 1e-4) * 0.62, L.upperRadius * 1.42);
+  orientUp(
+    deltoid,
+    shoulder.clone().addScaledVector(humerus, 0.24),
+    humerus.clone().negate().normalize(),
+  );
+  upper.add('secondary', deltoid);
 
   {
     const elbowBand = new THREE.CylinderGeometry(L.lowerRadius * 1.22, L.lowerRadius * 1.16, L.lowerRadius * 0.72, 12);
