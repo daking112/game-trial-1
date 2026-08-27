@@ -18,12 +18,18 @@ import type { Feature, LimbShape, Species } from './species';
 /**
  * Turns species data into a rigged, shaded creature.
  *
- * Everything is authored in a *unit space* where the creature is 1.0 tall,
- * and every piece of geometry is positioned in absolute unit coordinates.
- * That is the trick that keeps this readable: a leaf on the crest is placed
- * at "just above the head", not at "0.31 up and 0.02 back from the neck
- * joint, in the neck's rotated frame". At the end the whole thing is
- * measured, floored to y=0 and scaled to the species' real height.
+ * Everything is authored in a *unit space* where the creature is roughly 1.0
+ * tall, and every piece of geometry is positioned in absolute unit
+ * coordinates. That is the trick that keeps this readable: a leaf on the
+ * crest is placed at "just above the head", not at "0.31 up and 0.02 back
+ * from the neck joint, in the neck's rotated frame". At the end the whole
+ * thing is measured, floored to y=0 and scaled to the species' real height.
+ *
+ * The body is assembled per **body plan**. `sproutling`, `brawler`,
+ * `quadruped` and `raptor` share one parameterised spine -- a body axis with
+ * a pitch, so the same numbers describe a standing biped and a horizontal
+ * barrel on four legs -- while `serpent` and `drifter` have no legs at all
+ * and build their mass along a curve or around a floating core.
  */
 
 export interface CreatureRig {
@@ -44,9 +50,14 @@ export interface CreatureRig {
   armR: THREE.Group | null;
   foreL: THREE.Group | null;
   foreR: THREE.Group | null;
-  legL: THREE.Group;
-  legR: THREE.Group;
+  legL: THREE.Group | null;
+  legR: THREE.Group | null;
+  /** Tail, serpent body chain or drifter streamers -- all animate alike. */
   tail: THREE.Group[];
+  /** Per-segment wave amplitude, so a ten-link body does not flail. */
+  tailAmp: number[];
+  /** Per-segment phase lag. Resets per streamer on a drifter. */
+  tailLag: number[];
   wingL: THREE.Group | null;
   wingR: THREE.Group | null;
 }
@@ -122,10 +133,47 @@ function orientFwd(geo: THREE.BufferGeometry, at: THREE.Vector3, dir: THREE.Vect
 }
 
 const gauss = (x: number, c: number, w: number) => Math.exp(-(((x - c) / w) ** 2));
+const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /* ------------------------------------------------------------------ */
 /* Materials                                                           */
 /* ------------------------------------------------------------------ */
+
+/**
+ * A wrap-light rim term, injected into the standard shader.
+ *
+ * Three-point lighting alone leaves a stylised creature reading as flat
+ * colour fields: the terminator is the only edge in the whole form. A
+ * view-dependent fresnel picks out every curve away from the camera, which
+ * is what makes a rounded mass look rounded at a hundred pixels tall. It is
+ * also the cheapest way to separate a dark creature from a dark background.
+ */
+function addRim(mat: THREE.MeshStandardMaterial, colour: THREE.Color, strength: number, power: number, key: string) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uRimColour = { value: colour };
+    shader.uniforms.uRimStrength = { value: strength };
+    shader.uniforms.uRimPower = { value: power };
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform vec3 uRimColour;\nuniform float uRimStrength;\nuniform float uRimPower;',
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        [
+          '{',
+          '  vec3 rimN = normalize( normal );',
+          '  vec3 rimV = normalize( vViewPosition );',
+          '  float rimF = pow( clamp( 1.0 - dot( rimN, rimV ), 0.0, 1.0 ), uRimPower );',
+          '  outgoingLight += uRimColour * ( rimF * uRimStrength );',
+          '}',
+          '#include <opaque_fragment>',
+        ].join('\n'),
+      );
+  };
+  mat.customProgramCacheKey = () => `rim:${key}`;
+  return mat;
+}
 
 function buildMaterials(sp: Species) {
   const pal = sp.palette;
@@ -142,17 +190,29 @@ function buildMaterials(sp: Species) {
     return { map, normalMap };
   };
 
-  const skin = (colour: string, repeat = 3, rough = 0.62) => {
+  // Rim tint: a cool sky bounce, pulled a third of the way toward the
+  // species' own glow so an Ember creature rims warm and a Tide one cold.
+  const rimColour = new THREE.Color('#a9cdff').lerp(new THREE.Color(pal.glow), 0.34);
+
+  const skin = (
+    colour: string,
+    repeat = 3,
+    rough = 0.62,
+    normalScale = 0.62,
+    rim = 0.16,
+    key = colour,
+  ) => {
     const t = tiled(repeat);
-    return new THREE.MeshStandardMaterial({
+    const m = new THREE.MeshStandardMaterial({
       color: new THREE.Color(colour),
       map: t.map,
       normalMap: t.normalMap,
-      normalScale: new THREE.Vector2(0.5, 0.5),
+      normalScale: new THREE.Vector2(normalScale, normalScale),
       roughness: rough,
       metalness: 0.0,
-      envMapIntensity: 0.85,
+      envMapIntensity: 0.9,
     });
+    return addRim(m, rimColour, rim, 2.6, `${sp.id}:${key}`);
   };
 
   const glow = new THREE.MeshStandardMaterial({
@@ -171,19 +231,30 @@ function buildMaterials(sp: Species) {
     metalness: 0,
   });
 
+  // Value and finish are pushed apart deliberately: the primary hide is the
+  // matte reference, the secondary reads slightly waxier, the belly is the
+  // softest and least reflective, and the accent is the only saturated
+  // near-gloss on the body. Without that spread every block reads as the
+  // same plastic in a different colour.
   const materials: Record<string, THREE.Material> = {
-    primary: skin(pal.primary, 3, 0.6),
-    secondary: skin(pal.secondary, 3, 0.66),
-    belly: skin(pal.belly, 3, 0.55),
-    accent: skin(pal.accent, 4, 0.5),
-    dark: skin(pal.dark, 4, 0.5),
-    metal: new THREE.MeshStandardMaterial({
-      color: new THREE.Color(pal.metal),
-      map: hideTextures('plate', 11).map.clone(),
-      roughness: 0.32,
-      metalness: 0.92,
-      envMapIntensity: 1.25,
-    }),
+    primary: skin(pal.primary, 3, 0.60, 0.62, 0.17, 'primary'),
+    secondary: skin(pal.secondary, 3.6, 0.72, 0.80, 0.13, 'secondary'),
+    belly: skin(pal.belly, 2.4, 0.86, 0.34, 0.09, 'belly'),
+    accent: skin(pal.accent, 4, 0.40, 0.46, 0.26, 'accent'),
+    dark: skin(pal.dark, 4.4, 0.52, 0.70, 0.22, 'dark'),
+    metal: addRim(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(pal.metal),
+        map: hideTextures('plate', 11).map.clone(),
+        roughness: 0.30,
+        metalness: 0.92,
+        envMapIntensity: 1.35,
+      }),
+      rimColour,
+      0.20,
+      3.2,
+      `${sp.id}:metal`,
+    ),
     claw: new THREE.MeshStandardMaterial({
       color: new THREE.Color('#f5ead2'),
       roughness: 0.26,
@@ -230,6 +301,51 @@ function buildMaterials(sp: Species) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Body frame                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The body axis. `pitch` rotates it out of vertical, and every anchor -- hip,
+ * shoulder, dorsal line, belly line -- is expressed in that frame, so one set
+ * of numbers describes both an upright brawler and a horizontal stag.
+ */
+interface Frame {
+  /** Hip toward shoulder. */
+  axis: THREE.Vector3;
+  /** Back of the creature. */
+  dorsal: THREE.Vector3;
+  /** Underside. */
+  ventral: THREE.Vector3;
+  hip: THREE.Vector3;
+  centre: THREE.Vector3;
+  chest: THREE.Vector3;
+  top: THREE.Vector3;
+  pitch: number;
+  /** u in -1..1 along the body axis -> absolute point on the centreline. */
+  at: (u: number) => THREE.Vector3;
+}
+
+function makeFrame(sp: Species): Frame {
+  const t = sp.shape.torso;
+  const pitch = t.pitch;
+  const axis = V(0, Math.cos(pitch), Math.sin(pitch));
+  const dorsal = V(0, Math.sin(pitch), -Math.cos(pitch));
+  const hip = V(0, t.hipY, t.hipZ);
+  const at = (u: number) => hip.clone().addScaledVector(axis, t.height * (1 + u));
+  return {
+    axis,
+    dorsal,
+    ventral: dorsal.clone().negate(),
+    pitch,
+    hip,
+    centre: at(0),
+    chest: at(t.shoulderY),
+    top: at(1),
+    at,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* The build                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -245,248 +361,104 @@ export function buildCreature(sp: Species): BuiltCreature {
   scaler.name = 'scale';
   group.add(scaler);
 
-  /* --- anchors, all in unit space -------------------------------- */
   const t = s.torso;
   const hd = s.head;
-  const hipY = t.hipY;
-  const torsoY = hipY + t.height;
-  const torsoTop = hipY + t.height * 2;
-  const chestY = hipY + t.height * (1 + t.shoulderY);
-  const headAbs = new THREE.Vector3(0, hd.y, hd.z);
-  const chestAbs = new THREE.Vector3(0, chestY, t.radius * t.depth * 0.12);
-  const neckAbs = new THREE.Vector3().lerpVectors(chestAbs, headAbs, 0.62);
+  const frame = makeFrame(sp);
+  const headAbs = V(0, hd.y, hd.z);
+  const legless = s.plan === 'serpent' || s.plan === 'drifter';
 
-  /* --- rig -------------------------------------------------------- */
-  const bob = new Part('bob', scaler, new THREE.Vector3(0, 0, 0));
-  const hips = new Part('hips', bob, new THREE.Vector3(0, hipY, 0));
-  const torso = new Part('torso', hips, new THREE.Vector3(0, torsoY, 0));
-  const chest = new Part('chest', torso, chestAbs);
-  const neck = new Part('neck', chest, neckAbs);
-  const head = new Part('head', neck, headAbs);
-  const jawPivot = new THREE.Vector3(0, hd.y - hd.radius * 0.42, hd.z - hd.radius * hd.depth * 0.3);
-  const jaw = new Part('jaw', head, jawPivot);
-  const crest = new Part('crest', head, new THREE.Vector3(0, hd.y + hd.radius * 0.7, hd.z));
+  /* --- spine rig -------------------------------------------------- */
+  const bob = new Part('bob', scaler, V(0, 0, 0));
+  const hips = new Part('hips', bob, frame.hip.clone());
+  const torso = new Part('torso', hips, frame.centre.clone());
+  const chest = new Part('chest', torso, frame.chest.clone());
 
-  /* --- torso ------------------------------------------------------ */
-  {
-    const bodyProfile = (y: number) => ({
-      w: 1 + t.belly * gauss(y, -0.32, 0.62) + t.chest * gauss(y, 0.42, 0.55) - 0.16 * gauss(y, 1.0, 0.5),
-      d: (1 + t.belly * 0.72 * gauss(y, -0.25, 0.7) + t.chest * 0.5 * gauss(y, 0.35, 0.6)) * t.depth,
-      dz: t.belly * t.radius * 0.16 * gauss(y, -0.35, 0.7) + t.chest * t.radius * 0.22 * gauss(y, 0.42, 0.5),
-    });
-    const g = blob({ detail: 4, radius: t.radius, scaleY: t.height / t.radius, profile: bodyProfile });
-    // Lean the whole torso about the hip so the pose is baked into the mesh
-    // and the rig nodes can stay axis-aligned at rest.
-    leanAboutHip(g, t.lean, hipY);
-    torso.add('primary', xf(g, { pos: [0, torsoY, 0] }));
-
-    // Darker saddle over the back and haunches: the second colour block.
-    const saddle = blob({
-      detail: 3,
-      radius: t.radius * 0.99,
-      scaleY: (t.height * 0.98) / t.radius,
-      profile: (y) => ({
-        w: bodyProfile(y).w * 0.995,
-        d: bodyProfile(y).d * 0.995,
-        dz: bodyProfile(y).dz - t.radius * 0.30,
-      }),
-    });
-    leanAboutHip(saddle, t.lean, hipY);
-    torso.add('secondary', xf(saddle, { pos: [0, torsoY, 0] }));
-
-    // Belly patch: a lens pressed through the front of the torso. Proud of
-    // the surface at the centre, buried at the edges, so it crops itself.
-    const bellyGeo = blob({
-      detail: 3,
-      radius: t.radius * 0.74,
-      scaleY: (t.height * 1.02) / (t.radius * 0.74),
-      profile: (y) => ({ w: 1 - 0.18 * Math.abs(y), d: 0.5 }),
-    });
-    leanAboutHip(bellyGeo, t.lean, hipY);
-    torso.add(
-      'belly',
-      xf(bellyGeo, { pos: [0, torsoY - t.height * 0.12, t.radius * t.depth * 0.62 + t.chest * t.radius * 0.13] }),
-    );
+  /* --- body mass -------------------------------------------------- */
+  if (s.plan === 'serpent') {
+    buildSerpentBody(sp, hips, materials);
+  } else if (s.plan === 'drifter') {
+    buildDrifterCore(sp, torso);
+  } else {
+    buildTorso(sp, frame, torso);
   }
 
   /* --- neck ------------------------------------------------------- */
-  {
-    const a = new THREE.Vector3(0, chestY + t.height * 0.1, chestAbs.z);
-    const b = headAbs.clone().add(new THREE.Vector3(0, -hd.radius * 0.55, -hd.radius * hd.depth * 0.15));
-    const mid = new THREE.Vector3().lerpVectors(a, b, 0.5).add(new THREE.Vector3(0, 0, -t.radius * 0.06));
-    const curve = new THREE.CatmullRomCurve3([a, mid, b]);
-    const rBase = t.radius * 0.56;
-    const rTop = hd.radius * 0.62;
-    const g = taperedTube(curve, (u) => THREE.MathUtils.lerp(rBase, rTop, u * u * 0.8 + u * 0.2), 12, 12);
-    neck.add('primary', g);
-  }
+  const neckParts = buildNeck(sp, frame, headAbs, chest);
+  const neckRoot = neckParts[0] ?? chest;
+  const headParent = neckParts[neckParts.length - 1] ?? chest;
 
   /* --- head ------------------------------------------------------- */
+  const head = new Part('head', headParent, headAbs);
+  const jawPivot = V(0, hd.y - hd.radius * 0.42, hd.z - hd.radius * hd.depth * 0.3);
+  const jaw = new Part('jaw', head, jawPivot);
+  const crest = new Part('crest', head, V(0, hd.y + hd.radius * 0.7, hd.z));
   const headFrontZ = hd.z + hd.radius * hd.depth;
-  {
-    const skull = blob({
-      detail: 4,
-      radius: hd.radius,
-      profile: (y) => ({
-        w: hd.width * (1 + hd.cheek * 0.42 * gauss(y, -0.15, 0.5) - 0.1 * gauss(y, 1, 0.4)),
-        d: hd.depth * (1 + hd.jaw * 0.16 * gauss(y, -0.5, 0.45)),
-        dz: hd.radius * (hd.brow * 0.13 * gauss(y, 0.34, 0.3) + hd.jaw * 0.1 * gauss(y, -0.55, 0.4)),
-        dy: -hd.crownFlat * hd.radius * 0.55 * Math.max(0, y - 0.15),
-      }),
-    });
-    head.add('primary', xf(skull, { pos: [0, hd.y, hd.z], rot: [hd.tilt, 0, 0] }));
-
-    // Brow ridge: one wide wedge across both eyes. Reads as a scowl or a
-    // soft forehead depending on `brow`, and it is what stops the head from
-    // looking like a ball with dots on it.
-    if (hd.brow > 0.1) {
-      const bw = hd.radius * hd.width * 0.86;
-      const brow = blob({
-        detail: 3,
-        radius: 1,
-        profile: (y) => ({ w: 1 - 0.1 * y, d: 1 }),
-      });
-      brow.scale(bw, hd.radius * 0.20 * (0.6 + hd.brow), hd.radius * hd.depth * 0.46);
-      head.add(
-        'primary',
-        xf(brow, {
-          pos: [0, s.eye.y + s.eye.radius * (0.62 + hd.brow * 0.2), hd.z + hd.radius * hd.depth * 0.52],
-          rot: [-0.26 - hd.brow * 0.2, 0, 0],
-        }),
-      );
-    }
-
-    // Snout / beak.
-    if (hd.snout) {
-      const sn = hd.snout;
-      const base = new THREE.Vector3(0, hd.y - hd.radius * 0.14, hd.z + hd.radius * hd.depth * 0.24);
-      const tip = new THREE.Vector3(0, base.y - sn.drop, headFrontZ + sn.length);
-      const mid = new THREE.Vector3().lerpVectors(base, tip, 0.55).add(new THREE.Vector3(0, sn.drop * 0.28, 0));
-      const curve = new THREE.CatmullRomCurve3([base, mid, tip]);
-      const g = taperedTube(
-        curve,
-        (u) => THREE.MathUtils.lerp(sn.radius, sn.tipRadius, Math.pow(u, 0.7)) * (1 - 0.12 * Math.sin(u * Math.PI)),
-        14,
-        12,
-      );
-      head.add(sn.keel > 0.5 ? 'accent' : 'belly', g);
-
-      if (sn.keel > 0.35) {
-        // Hard keel along the top of a beak.
-        const keel = plate(
-          [
-            [0, 0],
-            [sn.length * 0.98, -sn.drop * 0.9],
-            [sn.length * 0.86, -sn.drop * 0.9 - sn.tipRadius * 1.3],
-            [0, -sn.radius * 0.85],
-          ],
-          sn.radius * 0.5,
-          sn.radius * 0.16,
-        );
-        keel.rotateY(Math.PI / 2);
-        head.add(
-          sn.keel > 0.5 ? 'accent' : 'primary',
-          xf(keel, { pos: [0, base.y + sn.radius * 0.72, base.z + hd.radius * 0.02] }),
-        );
-      }
-
-      // Nostrils.
-      const nostril = blob({ detail: 2, radius: sn.tipRadius * 0.24 });
-      for (const sx of [-1, 1]) {
-        head.add(
-          'dark',
-          xf(nostril.clone(), {
-            pos: [sx * sn.tipRadius * 0.52, tip.y + sn.tipRadius * 0.42, tip.z - sn.tipRadius * 0.5],
-            scale: [1, 0.7, 1.1],
-          }),
-        );
-      }
-      nostril.dispose();
-
-      // Mouth line: a dark wedge under the muzzle, plus the lower jaw.
-      const mouthW = sn.radius * 1.62;
-      const mouth = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.2 * y * y }) });
-      mouth.scale(mouthW, sn.radius * 0.30, sn.length * 0.92 + hd.radius * 0.16);
-      jaw.add(
-        'mouth',
-        xf(mouth, { pos: [0, base.y - sn.radius * 0.62, (base.z + tip.z) * 0.5], rot: [-sn.drop * 0.6, 0, 0] }),
-      );
-
-      const chin = blob({
-        detail: 3,
-        radius: 1,
-        profile: (y) => ({ w: 1 - 0.28 * Math.max(0, y), d: 1 - 0.2 * Math.max(0, y) }),
-      });
-      chin.scale(mouthW * 1.02, sn.radius * 0.52, (sn.length + hd.radius * 0.3) * 0.62);
-      jaw.add(
-        'belly',
-        xf(chin, {
-          pos: [0, base.y - sn.radius * 0.92, (base.z + tip.z) * 0.5 - sn.length * 0.06],
-          rot: [-sn.drop * 0.5, 0, 0],
-        }),
-      );
-
-      // Fangs poke down over the mouth line -- pure silhouette detail.
-      for (let i = 0; i < s.fangs; i++) {
-        const side = i % 2 === 0 ? -1 : 1;
-        const k = Math.floor(i / 2);
-        const g = spike(sn.radius * (0.62 - k * 0.16), sn.radius * (0.2 - k * 0.04), -0.4, 6, 6);
-        g.rotateX(Math.PI);
-        head.add(
-          'claw',
-          xf(g, {
-            pos: [
-              side * sn.radius * (0.78 - k * 0.14),
-              base.y - sn.radius * 0.52,
-              tip.z - sn.length * (0.18 + k * 0.34),
-            ],
-          }),
-        );
-      }
-    }
-
-    buildEyes(head, sp, materials);
-  }
+  buildHead(sp, head, jaw, materials);
 
   /* --- limbs ------------------------------------------------------ */
-  const legL = buildLimb('legL', hips, s.legs, -1, hipY, 'leg', sp);
-  const legR = buildLimb('legR', hips, s.legs, 1, hipY, 'leg', sp);
-
+  let legL: Part | null = null;
+  let legR: Part | null = null;
   let armL: Part | null = null;
   let armR: Part | null = null;
   let foreL: Part | null = null;
   let foreR: Part | null = null;
+
+  if (s.legs && !legless) {
+    legL = buildLimb('legL', hips, s.legs, -1, frame.hip, sp);
+    legR = buildLimb('legR', hips, s.legs, 1, frame.hip, sp);
+  }
+  if (s.forelegs && !legless) {
+    // Forelegs hang off the shoulder, a little below the chest node so the
+    // barrel sits on top of them rather than between them.
+    const root = frame.chest.clone().addScaledVector(frame.ventral, t.radius * 0.42);
+    const l = buildLimb('foreLegL', chest, s.forelegs, -1, root, sp);
+    const r = buildLimb('foreLegR', chest, s.forelegs, 1, root, sp);
+    foreL = l;
+    foreR = r;
+  }
   if (s.arms) {
-    const shoulderY = chestY + t.height * 0.08;
-    const shoulderX = t.radius * t.shoulderX;
-    const shoulderZ = chestAbs.z + t.radius * t.depth * 0.1;
-    const l = buildArm('armL', chest, s.arms, -1, new THREE.Vector3(-shoulderX, shoulderY, shoulderZ), sp);
-    const r = buildArm('armR', chest, s.arms, 1, new THREE.Vector3(shoulderX, shoulderY, shoulderZ), sp);
+    const shoulder = frame.chest
+      .clone()
+      .addScaledVector(frame.axis, t.height * 0.10)
+      .addScaledVector(frame.ventral, -t.radius * 0.06);
+    const l = buildArm('armL', chest, s.arms, -1, V(-t.radius * t.shoulderX, shoulder.y, shoulder.z), sp);
+    const r = buildArm('armR', chest, s.arms, 1, V(t.radius * t.shoulderX, shoulder.y, shoulder.z), sp);
     armL = l.upper;
     armR = r.upper;
-    foreL = l.lower;
-    foreR = r.lower;
+    // A quadruped's forelegs already occupy the `fore` slots.
+    if (!foreL) {
+      foreL = l.lower;
+      foreR = r.lower;
+    }
   }
 
-  /* --- tail ------------------------------------------------------- */
+  /* --- tail / streamers ------------------------------------------- */
   const tailParts: Part[] = [];
-  if (s.tail) {
+  const tailAmp: number[] = [];
+  const tailLag: number[] = [];
+
+  if (s.plan === 'serpent') {
+    buildSerpentChain(sp, hips, tailParts, tailAmp, tailLag);
+  } else if (s.plan === 'drifter') {
+    buildStreamers(sp, torso, tailParts, tailAmp, tailLag);
+  } else if (s.tail) {
     const tl = s.tail;
-    const start = new THREE.Vector3(0, torsoY + t.height * 0.15, -t.radius * t.depth * 0.72);
+    const wave = tl.wave ?? 1;
+    const start = frame.hip.clone().addScaledVector(frame.dorsal, t.radius * 0.62).addScaledVector(frame.axis, t.height * 0.1);
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i <= tl.segments; i++) {
       const u = i / tl.segments;
       pts.push(
-        new THREE.Vector3(
+        V(
           start.x + tl.sweep * tl.length * u * u,
           start.y + tl.rise * tl.length * Math.sin(u * Math.PI * 0.72) - tl.length * 0.14 * u * u,
           start.z - tl.length * (u * 0.82 + 0.18 * u * u),
         ),
       );
     }
-    let parent: Part | THREE.Object3D = hips;
+    let parent: Part = hips;
     for (let i = 0; i < tl.segments; i++) {
-      const seg: Part = new Part(`tail${i}`, parent as Part, pts[i]);
+      const seg: Part = new Part(`tail${i}`, parent, pts[i]);
       const a = pts[i];
       const b = pts[i + 1];
       const mid = new THREE.Vector3().lerpVectors(a, b, 0.5);
@@ -498,7 +470,17 @@ export function buildCreature(sp: Species): BuiltCreature {
         'primary',
         taperedTube(curve, (u) => rAt(THREE.MathUtils.lerp(u0, u1, u)), 6, 10),
       );
+      // Ventral scutes: a lighter underside stripe running the tail. Cheap,
+      // and it stops a long tail reading as a bare tube.
+      if (i % 2 === 0 && tl.radius > 0.03) {
+        const sc = blob({ detail: 2, radius: 1 });
+        const rr = rAt((u0 + u1) * 0.5);
+        sc.scale(rr * 0.66, rr * 0.42, tl.length / tl.segments * 0.46);
+        seg.add('belly', xf(sc, { pos: [mid.x, mid.y - rr * 0.72, mid.z] }));
+      }
       tailParts.push(seg);
+      tailAmp.push((0.10 + i * 0.035) * wave);
+      tailLag.push(i * 0.55);
       parent = seg;
     }
     buildTailTip(tailParts[tailParts.length - 1], pts[tl.segments], tl.tip, tl, sp);
@@ -508,18 +490,20 @@ export function buildCreature(sp: Species): BuiltCreature {
   const featureCtx: FeatureCtx = {
     sp,
     rnd,
+    frame,
     hips,
     torso,
     chest,
-    neck,
+    neck: neckRoot,
     head,
     crest,
-    hipY,
-    torsoY,
-    torsoTop,
-    chestY,
+    hipY: frame.hip.y,
+    torsoY: frame.centre.y,
+    torsoTop: frame.top.y,
+    chestY: frame.chest.y,
     headAbs,
     headFrontZ,
+    tailParts,
   };
   let earL = new Part('earL', head, headAbs.clone());
   let earR = new Part('earR', head, headAbs.clone());
@@ -538,16 +522,8 @@ export function buildCreature(sp: Species): BuiltCreature {
   }
 
   /* --- bake ------------------------------------------------------- */
-  const parts = [
-    bob, hips, torso, chest, neck, head, jaw, crest, earL, earR,
-    legL, legR, ...tailParts,
-  ];
-  if (armL) parts.push(armL);
-  if (armR) parts.push(armR);
-  if (foreL) parts.push(foreL);
-  if (foreR) parts.push(foreR);
-  if (wingL) parts.push(wingL);
-  if (wingR) parts.push(wingR);
+  const parts: Part[] = [bob, hips, torso, chest, head, jaw, crest, earL, earR, ...neckParts, ...tailParts];
+  for (const p of [legL, legR, armL, armR, foreL, foreR, wingL, wingR]) if (p) parts.push(p);
   collectParts(scaler, parts);
   for (const p of parts) p.nb.bake(materials, geometries);
 
@@ -557,7 +533,9 @@ export function buildCreature(sp: Species): BuiltCreature {
   const measured = box.max.y - box.min.y;
   const k = measured > 1e-4 ? s.height / measured : s.height;
   scaler.scale.setScalar(k);
-  scaler.position.y = -box.min.y * k;
+  // A drifter never touches the ground; everything else is floored to y=0.
+  const hover = s.plan === 'drifter' ? (s.drifter?.hover ?? 0) * s.height : 0;
+  scaler.position.y = -box.min.y * k + hover;
   scaler.updateMatrixWorld(true);
 
   const rig: CreatureRig = {
@@ -566,7 +544,7 @@ export function buildCreature(sp: Species): BuiltCreature {
     hips: hips.object,
     torso: torso.object,
     chest: chest.object,
-    neck: neck.object,
+    neck: neckRoot.object,
     head: head.object,
     jaw: jaw.object,
     earL: earL.object,
@@ -576,9 +554,11 @@ export function buildCreature(sp: Species): BuiltCreature {
     armR: armR?.object ?? null,
     foreL: foreL?.object ?? null,
     foreR: foreR?.object ?? null,
-    legL: legL.object,
-    legR: legR.object,
+    legL: legL?.object ?? null,
+    legR: legR?.object ?? null,
     tail: tailParts.map((p) => p.object),
+    tailAmp,
+    tailLag,
     wingL: wingL?.object ?? null,
     wingR: wingR?.object ?? null,
   };
@@ -588,7 +568,7 @@ export function buildCreature(sp: Species): BuiltCreature {
     rig,
     materials: Object.values(materials),
     geometries,
-    height: s.height,
+    height: s.height + hover,
     glowMaterials,
   };
 }
@@ -598,13 +578,502 @@ function collectParts(scaler: THREE.Group, parts: Part[]) {
   for (const p of parts) if (!p.object.parent) scaler.add(p.object);
 }
 
-function leanAboutHip(geo: THREE.BufferGeometry, lean: number, hipY: number) {
-  geo.translate(0, -0, 0);
+/** Rotate a geometry about a pivot on the X axis -- used to bake pose in. */
+function pitchAbout(geo: THREE.BufferGeometry, angle: number, pivot: THREE.Vector3) {
   const m = new THREE.Matrix4()
-    .makeTranslation(0, hipY, 0)
-    .multiply(new THREE.Matrix4().makeRotationX(lean))
-    .multiply(new THREE.Matrix4().makeTranslation(0, -hipY, 0));
+    .makeTranslation(pivot.x, pivot.y, pivot.z)
+    .multiply(new THREE.Matrix4().makeRotationX(angle))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
   geo.applyMatrix4(m);
+  return geo;
+}
+
+/* ------------------------------------------------------------------ */
+/* Torso                                                               */
+/* ------------------------------------------------------------------ */
+
+function buildTorso(sp: Species, frame: Frame, torso: Part) {
+  const t = sp.shape.torso;
+  const waist = t.waist ?? 0;
+
+  const bodyProfile = (y: number) => {
+    const pinch = 1 - waist * gauss(y, -0.05, 0.34);
+    return {
+      w:
+        (1 + t.belly * gauss(y, -0.32, 0.62) + t.chest * gauss(y, 0.42, 0.55) - 0.16 * gauss(y, 1.0, 0.5)) *
+        pinch,
+      d:
+        (1 + t.belly * 0.72 * gauss(y, -0.25, 0.7) + t.chest * 0.5 * gauss(y, 0.35, 0.6)) * t.depth * pinch,
+      dz: t.belly * t.radius * 0.16 * gauss(y, -0.35, 0.7) + t.chest * t.radius * 0.22 * gauss(y, 0.42, 0.5),
+    };
+  };
+
+  const place = (g: THREE.BufferGeometry) => {
+    // Author along +Y, then pitch the whole mass onto the body axis and lean
+    // it about the hip, so the pose is baked in and the rig stays axis-aligned.
+    pitchAbout(g, frame.pitch, V(0, 0, 0));
+    g.translate(0, frame.centre.y, frame.centre.z);
+    pitchAbout(g, t.lean, frame.hip);
+    return g;
+  };
+
+  const body = blob({ detail: 4, radius: t.radius, scaleY: t.height / t.radius, profile: bodyProfile });
+  torso.add('primary', place(body));
+
+  // Darker saddle over the back: the second colour block, and the thing that
+  // reads as counter-shading at a distance.
+  const saddle = blob({
+    detail: 3,
+    radius: t.radius * 0.99,
+    scaleY: (t.height * 0.98) / t.radius,
+    profile: (y) => ({
+      w: bodyProfile(y).w * 0.995,
+      d: bodyProfile(y).d * 0.995,
+      dz: bodyProfile(y).dz - t.radius * 0.30,
+    }),
+  });
+  torso.add('secondary', place(saddle));
+
+  // Belly patch: a lens pressed through the front of the torso. Proud of the
+  // surface at the centre, buried at the edges, so it crops itself.
+  const bellyGeo = blob({
+    detail: 3,
+    radius: t.radius * 0.74,
+    scaleY: (t.height * 1.02) / (t.radius * 0.74),
+    profile: (y) => ({ w: (1 - 0.18 * Math.abs(y)) * (1 - (t.waist ?? 0) * 0.6 * gauss(y, -0.05, 0.34)), d: 0.5 }),
+  });
+  bellyGeo.translate(0, -t.height * 0.12, t.radius * t.depth * 0.62 + t.chest * t.radius * 0.13);
+  torso.add('belly', place(bellyGeo));
+}
+
+/* ------------------------------------------------------------------ */
+/* Neck                                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A segmented neck from the shoulders to the skull.
+ *
+ * Length here is the single biggest silhouette lever on the roster: the
+ * difference between the stag and the brawler is mostly that one of them has
+ * half a body length of neck and the other has none.
+ */
+function buildNeck(sp: Species, frame: Frame, headAbs: THREE.Vector3, chest: Part): Part[] {
+  const nk = sp.shape.neck;
+  const hd = sp.shape.head;
+  const a = frame.chest.clone().addScaledVector(frame.axis, sp.shape.torso.height * 0.16);
+  const b = headAbs.clone().addScaledVector(frame.dorsal, hd.radius * 0.30).add(V(0, -hd.radius * 0.35, 0));
+  const dist = a.distanceTo(b);
+  if (dist < 1e-4) return [];
+
+  // Two offset controls rather than one, so a negative arch folds the neck
+  // into an S instead of merely bowing it.
+  const c1 = new THREE.Vector3().lerpVectors(a, b, 0.34).addScaledVector(frame.dorsal, -nk.arch * dist * 0.55);
+  const c2 = new THREE.Vector3().lerpVectors(a, b, 0.74).addScaledVector(frame.dorsal, nk.arch * dist * 0.62);
+  const curve = new THREE.CatmullRomCurve3([a, c1, c2, b]);
+  const rAt = (u: number) => THREE.MathUtils.lerp(nk.radiusBase, nk.radiusTop, Math.pow(u, 0.75));
+
+  const parts: Part[] = [];
+  let parent: Part = chest;
+  for (let i = 0; i < nk.segments; i++) {
+    const u0 = i / nk.segments;
+    const u1 = (i + 1) / nk.segments;
+    const p0 = curve.getPointAt(u0);
+    const seg = new Part(`neck${i}`, parent, p0);
+    const sub = new THREE.CatmullRomCurve3([
+      p0,
+      curve.getPointAt((u0 + u1) * 0.5),
+      curve.getPointAt(u1),
+    ]);
+    seg.add('primary', taperedTube(sub, (u) => rAt(THREE.MathUtils.lerp(u0, u1, u)), 8, 12));
+    // Throat: a lighter strip down the front of the neck.
+    const throat = taperedTube(sub, (u) => rAt(THREE.MathUtils.lerp(u0, u1, u)) * 0.62, 6, 9);
+    throat.translate(0, 0, rAt((u0 + u1) * 0.5) * 0.62);
+    seg.add('belly', throat);
+    parts.push(seg);
+    parent = seg;
+  }
+
+  // Ruff where the neck meets the shoulders: a collar of plates that hides
+  // the join and widens the top of the silhouette.
+  if (nk.ruff && parts.length) {
+    const ruff = nk.ruff;
+    const base = curve.getPointAt(0.10);
+    const tan = curve.getTangentAt(0.10);
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const ang = (i / (n - 1) - 0.5) * Math.PI * 1.35;
+      const side = V(Math.sin(ang), 0, 0);
+      const dir = side
+        .clone()
+        .addScaledVector(frame.dorsal, Math.cos(ang) * 0.9)
+        .addScaledVector(frame.axis, 0.45)
+        .normalize();
+      const len = nk.radiusBase * 1.9 * ruff * (0.7 + 0.3 * Math.cos(ang));
+      const g = spike(len, nk.radiusBase * 0.36, 0.5, 7, 6);
+      orientUp(g, base.clone().addScaledVector(tan, -nk.radiusBase * 0.1), dir);
+      parts[0].add(i % 2 === 0 ? 'secondary' : 'metal', g);
+    }
+  }
+  return parts;
+}
+
+/* ------------------------------------------------------------------ */
+/* Head                                                                */
+/* ------------------------------------------------------------------ */
+
+function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string, THREE.Material>) {
+  const s = sp.shape;
+  const hd = s.head;
+  const headFrontZ = hd.z + hd.radius * hd.depth;
+
+  const skull = blob({
+    detail: 4,
+    radius: hd.radius,
+    profile: (y) => ({
+      w: hd.width * (1 + hd.cheek * 0.42 * gauss(y, -0.15, 0.5) - 0.1 * gauss(y, 1, 0.4)),
+      d: hd.depth * (1 + hd.jaw * 0.16 * gauss(y, -0.5, 0.45)),
+      dz: hd.radius * (hd.brow * 0.13 * gauss(y, 0.34, 0.3) + hd.jaw * 0.1 * gauss(y, -0.55, 0.4)),
+      dy: -hd.crownFlat * hd.radius * 0.55 * Math.max(0, y - 0.15),
+    }),
+  });
+  head.add('primary', xf(skull, { pos: [0, hd.y, hd.z], rot: [hd.tilt, 0, 0] }));
+
+  // Brow ridge: one wide wedge across both eyes. Reads as a scowl or a soft
+  // forehead depending on `brow`, and it is what stops the head from looking
+  // like a ball with dots on it.
+  if (hd.brow > 0.1) {
+    const bw = hd.radius * hd.width * 0.86;
+    const brow = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.1 * y, d: 1 }) });
+    brow.scale(bw, hd.radius * 0.20 * (0.6 + hd.brow), hd.radius * hd.depth * 0.46);
+    head.add(
+      'primary',
+      xf(brow, {
+        pos: [0, s.eye.y + s.eye.radius * (0.62 + hd.brow * 0.2), hd.z + hd.radius * hd.depth * 0.52],
+        rot: [-0.26 - hd.brow * 0.2, 0, 0],
+      }),
+    );
+  }
+
+  if (hd.snout) {
+    const sn = hd.snout;
+    const spread = sn.spread ?? 1;
+    const base = V(0, hd.y - hd.radius * 0.14, hd.z + hd.radius * hd.depth * 0.24);
+    const tip = V(0, base.y - sn.drop, headFrontZ + sn.length);
+    const mid = new THREE.Vector3().lerpVectors(base, tip, 0.55).add(V(0, sn.drop * 0.28, 0));
+    const curve = new THREE.CatmullRomCurve3([base, mid, tip]);
+    const g = taperedTube(
+      curve,
+      (u) => THREE.MathUtils.lerp(sn.radius, sn.tipRadius, Math.pow(u, 0.7)) * (1 - 0.12 * Math.sin(u * Math.PI)),
+      14,
+      12,
+    );
+    if (spread !== 1) {
+      g.translate(0, -base.y, 0);
+      g.scale(spread, 1 / Math.sqrt(spread), 1);
+      g.translate(0, base.y, 0);
+    }
+    head.add(sn.keel > 0.5 ? 'accent' : 'belly', g);
+
+    if (sn.keel > 0.35) {
+      const keel = plate(
+        [
+          [0, 0],
+          [sn.length * 0.98, -sn.drop * 0.9],
+          [sn.length * 0.86, -sn.drop * 0.9 - sn.tipRadius * 1.3],
+          [0, -sn.radius * 0.85],
+        ],
+        sn.radius * 0.5,
+        sn.radius * 0.16,
+      );
+      keel.rotateY(Math.PI / 2);
+      head.add(
+        sn.keel > 0.5 ? 'accent' : 'primary',
+        xf(keel, { pos: [0, base.y + sn.radius * 0.72, base.z + hd.radius * 0.02] }),
+      );
+    }
+
+    const nostril = blob({ detail: 2, radius: sn.tipRadius * 0.24 });
+    for (const sx of [-1, 1]) {
+      head.add(
+        'dark',
+        xf(nostril.clone(), {
+          pos: [sx * sn.tipRadius * 0.52 * spread, tip.y + sn.tipRadius * 0.42, tip.z - sn.tipRadius * 0.5],
+          scale: [1, 0.7, 1.1],
+        }),
+      );
+    }
+    nostril.dispose();
+
+    const mouthW = sn.radius * 1.62 * spread;
+    const mouth = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.2 * y * y }) });
+    mouth.scale(mouthW, sn.radius * 0.30, sn.length * 0.92 + hd.radius * 0.16);
+    jaw.add(
+      'mouth',
+      xf(mouth, { pos: [0, base.y - sn.radius * 0.62, (base.z + tip.z) * 0.5], rot: [-sn.drop * 0.6, 0, 0] }),
+    );
+
+    const chin = blob({
+      detail: 3,
+      radius: 1,
+      profile: (y) => ({ w: 1 - 0.28 * Math.max(0, y), d: 1 - 0.2 * Math.max(0, y) }),
+    });
+    chin.scale(mouthW * 1.02, sn.radius * 0.52, (sn.length + hd.radius * 0.3) * 0.62);
+    jaw.add(
+      'belly',
+      xf(chin, {
+        pos: [0, base.y - sn.radius * 0.92, (base.z + tip.z) * 0.5 - sn.length * 0.06],
+        rot: [-sn.drop * 0.5, 0, 0],
+      }),
+    );
+
+    for (let i = 0; i < s.fangs; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const kk = Math.floor(i / 2);
+      const g2 = spike(sn.radius * (0.62 - kk * 0.16), sn.radius * (0.2 - kk * 0.04), -0.4, 6, 6);
+      g2.rotateX(Math.PI);
+      head.add(
+        'claw',
+        xf(g2, {
+          pos: [
+            side * sn.radius * (0.78 - kk * 0.14) * spread,
+            base.y - sn.radius * 0.52,
+            tip.z - sn.length * (0.18 + kk * 0.34),
+          ],
+        }),
+      );
+    }
+  }
+
+  buildEyes(head, sp, materials);
+}
+
+/* ------------------------------------------------------------------ */
+/* Serpent                                                             */
+/* ------------------------------------------------------------------ */
+
+function serpentCurve(sp: Species) {
+  const sr = sp.shape.serpent!;
+  return new THREE.CatmullRomCurve3(sr.path.map((p) => V(p[0], p[1], p[2])));
+}
+
+function serpentRadius(sp: Species, u: number) {
+  const sr = sp.shape.serpent!;
+  const sw = Math.max(sr.swell, 1e-3);
+  if (u < sw) return sr.radius * (0.74 + 0.26 * (u / sw));
+  const k = THREE.MathUtils.clamp((u - sw) / (1 - sw), 0, 1);
+  return sr.radius * (Math.pow(1 - k, 0.80) * 0.98 + 0.02);
+}
+
+/** Fins and rings live on the static hip node; the chain carries the tubes. */
+function buildSerpentBody(sp: Species, hips: Part, _materials: Record<string, THREE.Material>) {
+  void hips;
+  void sp;
+  void _materials;
+}
+
+function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], lag: number[]) {
+  const sr = sp.shape.serpent!;
+  const curve = serpentCurve(sp);
+  const n = sr.segments;
+
+  let parent: Part = hips;
+  for (let i = 0; i < n; i++) {
+    const u0 = i / n;
+    const u1 = (i + 1) / n;
+    const p0 = curve.getPointAt(u0);
+    const seg = new Part(`body${i}`, parent, p0);
+    const sub = new THREE.CatmullRomCurve3([
+      p0,
+      curve.getPointAt((u0 + u1) * 0.5),
+      curve.getPointAt(u1),
+    ]);
+    const rAt = (u: number) => serpentRadius(sp, THREE.MathUtils.lerp(u0, u1, u));
+    seg.add('primary', taperedTube(sub, rAt, 8, 14));
+
+    // Belly scutes: a pale ladder along the underside. This is what stops a
+    // long smooth tube from reading as a hose.
+    const perScute = Math.max(1, Math.round(sr.scutes / n));
+    for (let k = 0; k < perScute; k++) {
+      const u = THREE.MathUtils.lerp(u0, u1, (k + 0.5) / perScute);
+      const p = curve.getPointAt(u);
+      const tan = curve.getTangentAt(u);
+      const rr = serpentRadius(sp, u);
+      const side = new THREE.Vector3().crossVectors(tan, UP).normalize();
+      const down = new THREE.Vector3().crossVectors(side, tan).normalize().multiplyScalar(-1);
+      const g = blob({ detail: 2, radius: 1, profile: (y) => ({ w: 1 - 0.25 * Math.abs(y) }) });
+      g.scale(rr * 0.72, rr * 0.34, (1 / sr.scutes) * 2.2);
+      orientFwd(g, p.clone().addScaledVector(down, rr * 0.74), tan);
+      seg.add('belly', g);
+    }
+
+    // Accent bands: three saturated rings around the body, spaced so they
+    // read as markings rather than as stripes.
+    if (i % 3 === 1) {
+      const u = (u0 + u1) * 0.5;
+      const p = curve.getPointAt(u);
+      const tan = curve.getTangentAt(u);
+      const rr = serpentRadius(sp, u);
+      const ring = new THREE.TorusGeometry(rr * 0.99, rr * 0.16, 8, 20);
+      orientFwd(ring, p, tan);
+      seg.add('accent', ring);
+    }
+
+    // Dorsal fin plates over the front half.
+    const fu = (u0 + u1) * 0.5;
+    if (fu <= sr.finEnd) {
+      const p = curve.getPointAt(fu);
+      const tan = curve.getTangentAt(fu);
+      const side = new THREE.Vector3().crossVectors(tan, UP).normalize();
+      const up = new THREE.Vector3().crossVectors(side, tan).normalize();
+      const h = sr.finHeight * Math.sin(Math.pow(fu / sr.finEnd, 0.7) * Math.PI) * 1.1 + sr.finHeight * 0.25;
+      const g = splinePlate(
+        [
+          [0, 0],
+          [h * 0.55, h * 0.42],
+          [h * 0.30, h * 1.0],
+          [-h * 0.42, h * 0.62],
+          [-h * 0.5, 0],
+        ],
+        serpentRadius(sp, fu) * 0.24,
+      );
+      orientUp(g, p.clone().addScaledVector(up, serpentRadius(sp, fu) * 0.6), up, 0);
+      // The plate is authored in XY; roll it into the plane of the body.
+      seg.add('accent', g);
+    }
+
+    out.push(seg);
+    // A long chain needs a much gentler wave than a five-link tail, and the
+    // amplitude has to grow toward the tip or the whole body swings as a bar.
+    amp.push(0.020 + 0.035 * Math.pow(i / n, 1.6));
+    lag.push(i * 0.42);
+    parent = seg;
+  }
+
+  // Tail fin.
+  const last = out[out.length - 1];
+  const tip = curve.getPointAt(1);
+  const tan = curve.getTangentAt(1);
+  for (const roll of [0, Math.PI * 0.5]) {
+    const g = splinePlate(
+      [
+        [0, 0],
+        [sr.radius * 1.5, sr.radius * 1.4],
+        [sr.radius * 0.9, sr.radius * 3.0],
+        [0, sr.radius * 2.2],
+        [-sr.radius * 0.9, sr.radius * 3.0],
+        [-sr.radius * 1.5, sr.radius * 1.4],
+      ],
+      sr.radius * 0.16,
+    );
+    orientFwd(g, tip.clone().addScaledVector(tan, sr.radius * 0.2), tan, roll);
+    last.add('accent', g);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Drifter                                                             */
+/* ------------------------------------------------------------------ */
+
+function buildDrifterCore(sp: Species, torso: Part) {
+  const d = sp.shape.drifter!;
+  const c = V(0, d.coreY, 0);
+
+  const core = blob({ detail: 4, radius: d.coreRadius, profile: (y) => ({ w: 1 - 0.06 * y * y, d: 1 - 0.06 * y * y }) });
+  core.scale(1, d.coreFlat, 1);
+  torso.add('primary', xf(core, { pos: [c.x, c.y, c.z] }));
+
+  // A bright underside lens: the charged half of the creature.
+  const lens = blob({ detail: 3, radius: d.coreRadius * 0.82 });
+  lens.scale(1, d.coreFlat * 0.7, 1);
+  torso.add('belly', xf(lens, { pos: [0, c.y - d.coreRadius * 0.30, d.coreRadius * 0.22] }));
+
+  // Dark cap over the top, so the core has three values from above to below.
+  const cap = blob({ detail: 3, radius: d.coreRadius * 0.94 });
+  cap.scale(1, d.coreFlat * 0.86, 1);
+  torso.add('secondary', xf(cap, { pos: [0, c.y + d.coreRadius * 0.26, -d.coreRadius * 0.12] }));
+
+  // Copper rings, each on its own axis. Nothing else on the roster carries a
+  // perfect circle, so this alone identifies the species in silhouette.
+  for (let i = 0; i < d.rings; i++) {
+    const tiltA = (i / Math.max(1, d.rings - 1) - 0.5) * 1.5 + 0.35;
+    const ring = new THREE.TorusGeometry(d.ringRadius * (1 - i * 0.16), d.coreRadius * 0.075, 8, 40);
+    torso.add('metal', xf(ring, { pos: [0, c.y, 0], rot: [Math.PI / 2 + tiltA * 0.6, tiltA, 0] }));
+    const stud = blob({ detail: 2, radius: d.coreRadius * 0.13 });
+    torso.add(
+      'accent',
+      xf(stud, {
+        pos: [
+          Math.sin(tiltA) * d.ringRadius * (1 - i * 0.16),
+          c.y + Math.cos(tiltA) * d.ringRadius * 0.35,
+          Math.cos(tiltA) * d.ringRadius * 0.4,
+        ],
+      }),
+    );
+  }
+
+  // Quill halo: a fan radiating outward and back from the core equator.
+  for (let i = 0; i < d.halo; i++) {
+    const u = d.halo === 1 ? 0.5 : i / (d.halo - 1);
+    const ang = (u - 0.5) * Math.PI * 1.7;
+    const len = d.haloLength * (0.55 + 0.45 * Math.cos((u - 0.5) * Math.PI));
+    const dir = V(Math.sin(ang) * 0.94, Math.cos(ang) * 0.62 + 0.18, -Math.abs(Math.cos(ang)) * 0.5 - 0.1).normalize();
+    const g = spike(len, d.coreRadius * 0.085, 0.22, 8, 6);
+    orientUp(g, c.clone().addScaledVector(dir, d.coreRadius * 0.78), dir);
+    torso.add(i % 2 === 0 ? 'metal' : 'dark', g);
+    if (i % 3 === 0) {
+      const tipG = blob({ detail: 2, radius: d.coreRadius * 0.07 });
+      torso.add('glow', xf(tipG, { pos: [
+        c.x + dir.x * (d.coreRadius * 0.78 + len),
+        c.y + dir.y * (d.coreRadius * 0.78 + len),
+        c.z + dir.z * (d.coreRadius * 0.78 + len),
+      ] }));
+    }
+  }
+}
+
+function buildStreamers(sp: Species, torso: Part, out: Part[], amp: number[], lag: number[]) {
+  const d = sp.shape.drifter!;
+  const segs = 4;
+  for (let sIdx = 0; sIdx < d.streamers; sIdx++) {
+    const u = d.streamers === 1 ? 0.5 : sIdx / (d.streamers - 1);
+    const ang = (u - 0.5) * Math.PI * 1.1;
+    const x0 = Math.sin(ang) * d.streamerSpread;
+    const z0 = Math.cos(ang) * d.streamerSpread * 0.55 - d.coreRadius * 0.15;
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const v = i / segs;
+      pts.push(
+        V(
+          x0 * (1 + v * 0.5),
+          d.coreY - d.coreRadius * 0.55 - d.streamerLength * v,
+          z0 - d.streamerLength * 0.28 * v * v,
+        ),
+      );
+    }
+    let parent: Part = torso;
+    for (let i = 0; i < segs; i++) {
+      const seg = new Part(`streamer${sIdx}_${i}`, parent, pts[i]);
+      const curve = new THREE.CatmullRomCurve3([
+        pts[i],
+        new THREE.Vector3().lerpVectors(pts[i], pts[i + 1], 0.5),
+        pts[i + 1],
+      ]);
+      const r0 = d.coreRadius * 0.16 * (1 - i / segs) + d.coreRadius * 0.03;
+      const r1 = d.coreRadius * 0.16 * (1 - (i + 1) / segs) + d.coreRadius * 0.03;
+      seg.add('secondary', taperedTube(curve, (v) => THREE.MathUtils.lerp(r0, r1, v), 6, 8));
+      if (i === segs - 1) {
+        const bead = blob({ detail: 2, radius: d.coreRadius * 0.10 });
+        seg.add('glow', xf(bead, { pos: [pts[segs].x, pts[segs].y, pts[segs].z] }));
+      } else if (i % 2 === 0) {
+        const bead = blob({ detail: 2, radius: d.coreRadius * 0.09 });
+        seg.add('accent', xf(bead, { pos: [pts[i + 1].x, pts[i + 1].y, pts[i + 1].z] }));
+      }
+      out.push(seg);
+      amp.push(0.06 + i * 0.05);
+      lag.push(i * 0.5 + sIdx * 0.9);
+      parent = seg;
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -617,20 +1086,17 @@ function buildEyes(head: Part, sp: Species, _materials: Record<string, THREE.Mat
   const R = e.radius;
 
   for (const side of [-1, 1]) {
-    const centre = new THREE.Vector3(side * e.spacing, e.y, e.z);
-    const dir = new THREE.Vector3(Math.sin(e.splay) * side, -0.06, Math.cos(e.splay)).normalize();
+    const centre = V(side * e.spacing, e.y, e.z);
+    const dir = V(Math.sin(e.splay) * side, -0.06, Math.cos(e.splay)).normalize();
     const right = new THREE.Vector3().crossVectors(UP, dir).normalize().multiplyScalar(-1);
     const up = new THREE.Vector3().crossVectors(dir, right).normalize();
 
-    // Dark socket behind the eye: gives every eye a hard outline against the
-    // hide, which is the difference between "eye" and "bead glued on".
     const socket = blob({ detail: 3, radius: 1 });
     socket.scale(R * 1.30, R * 1.24, R * 0.9);
     orientFwd(socket, centre.clone().addScaledVector(dir, -R * 0.22), dir, e.lidTilt * side);
     head.add('dark', socket);
 
     if (e.mask > 0.05) {
-      // Mask stripe sweeping back from the eye toward the ear.
       const mask = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.3 * Math.abs(y) }) });
       mask.scale(R * 0.55, R * 0.62 * (0.6 + e.mask), R * 1.9 * e.mask);
       orientFwd(
@@ -661,45 +1127,35 @@ function buildEyes(head: Part, sp: Species, _materials: Record<string, THREE.Mat
     orientFwd(pupil, centre.clone().addScaledVector(dir, R * 0.72), dir);
     head.add('pupil', pupil);
 
-    // Rim: a dark ring around the eyeball equator. Cheap, and it is what
-    // makes the eye read as a graphic shape rather than a shaded ball.
     const rim = new THREE.TorusGeometry(R * 0.985, R * 0.085, 6, 22);
     orientFwd(rim, centre.clone().addScaledVector(dir, R * 0.1), dir);
     head.add('dark', rim);
 
-    // Specular highlights, placed against the key light, not the camera.
     const keyRight = new THREE.Vector3().crossVectors(UP, KEY).normalize();
     const h1 = blob({ detail: 2, radius: R * 0.235 });
     h1.scale(1, 0.86, 0.55);
-    const h1p = centre
-      .clone()
-      .addScaledVector(dir, R * 0.86)
-      .addScaledVector(UP, R * 0.34)
-      .addScaledVector(keyRight, -R * 0.3);
-    orientFwd(h1, h1p, dir);
+    orientFwd(
+      h1,
+      centre.clone().addScaledVector(dir, R * 0.86).addScaledVector(UP, R * 0.34).addScaledVector(keyRight, -R * 0.3),
+      dir,
+    );
     head.add('hilite', h1);
 
     const h2 = blob({ detail: 2, radius: R * 0.105 });
     h2.scale(1, 1, 0.5);
-    const h2p = centre
-      .clone()
-      .addScaledVector(dir, R * 0.86)
-      .addScaledVector(UP, -R * 0.36)
-      .addScaledVector(keyRight, R * 0.3);
-    orientFwd(h2, h2p, dir);
+    orientFwd(
+      h2,
+      centre.clone().addScaledVector(dir, R * 0.86).addScaledVector(UP, -R * 0.36).addScaledVector(keyRight, R * 0.3),
+      dir,
+    );
     head.add('hilite', h2);
 
-    // Upper lid: an eyelid bulge in hide colour that crops the sclera.
     if (e.lid > 0.02) {
       const lid = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.18 * y }) });
       lid.scale(R * 1.30, R * 0.78, R * 1.24);
       const drop = R * (1.0 - e.lid * 1.28);
-      const p = centre
-        .clone()
-        .addScaledVector(UP, R * 0.78 + drop)
-        .addScaledVector(dir, -R * 0.1);
+      const p = centre.clone().addScaledVector(UP, R * 0.78 + drop).addScaledVector(dir, -R * 0.1);
       const g = orientFwd(lid, p, dir, 0);
-      // Tilt the lid line: positive rolls the inner corner up = fierce.
       const m = new THREE.Matrix4()
         .makeTranslation(centre.x, centre.y, centre.z)
         .multiply(new THREE.Matrix4().makeRotationZ(-e.lidTilt * side))
@@ -708,14 +1164,12 @@ function buildEyes(head: Part, sp: Species, _materials: Record<string, THREE.Mat
       head.add('primary', g);
     }
 
-    // Lower lid, always light: a thin sliver that seats the eye in the face.
     const low = blob({ detail: 2, radius: 1, profile: (y) => ({ w: 1 - 0.2 * y }) });
     low.scale(R * 1.16, R * 0.5, R * 1.05);
     orientFwd(low, centre.clone().addScaledVector(UP, -R * 1.12).addScaledVector(dir, -R * 0.14), dir);
     head.add('primary', low);
   }
 
-  // Cheek blush marks give the face a third read at distance.
   if (hd.cheek > 0.34 && sp.shape.crouch < 0.6) {
     for (const side of [-1, 1]) {
       const g = blob({ detail: 2, radius: 1 });
@@ -723,11 +1177,7 @@ function buildEyes(head: Part, sp: Species, _materials: Record<string, THREE.Mat
       head.add(
         'accent',
         xf(g, {
-          pos: [
-            side * hd.radius * hd.width * 0.72,
-            e.y - e.radius * 1.9,
-            hd.z + hd.radius * hd.depth * 0.66,
-          ],
+          pos: [side * hd.radius * hd.width * 0.72, e.y - e.radius * 1.9, hd.z + hd.radius * hd.depth * 0.66],
         }),
       );
     }
@@ -738,50 +1188,74 @@ function buildEyes(head: Part, sp: Species, _materials: Record<string, THREE.Mat
 /* Limbs                                                               */
 /* ------------------------------------------------------------------ */
 
-function buildLimb(
-  name: string,
-  parent: Part,
-  L: LimbShape,
-  side: number,
-  hipY: number,
-  kind: 'leg',
-  sp: Species,
-): Part {
-  const root = new THREE.Vector3(side * L.spread, hipY, L.forward);
+/**
+ * A leg. With `pastern` set it is digitigrade: thigh forward, shank back,
+ * metatarsus forward again. That zig-zag is most of what separates a bird or
+ * a fighter from a creature standing on two pegs.
+ */
+function buildLimb(name: string, parent: Part, L: LimbShape, side: number, root0: THREE.Vector3, sp: Species): Part {
+  const splay = L.splay ?? 0;
+  const root = root0.clone().add(V(side * L.spread, 0, L.forward));
   const part = new Part(name, parent, root);
 
-  const half = L.bend * 0.5;
-  const knee = root
-    .clone()
-    .add(new THREE.Vector3(side * L.spread * 0.06, -L.upperLength * Math.cos(half), L.upperLength * Math.sin(half)));
-  const ankle = knee
-    .clone()
-    .add(new THREE.Vector3(side * L.spread * 0.02, -L.lowerLength * Math.cos(half), -L.lowerLength * Math.sin(half)));
+  const digi = (L.pastern ?? 0) > 1e-4;
+  const a1 = digi ? L.bend * 0.55 : L.bend * 0.5;
+  const a2 = digi ? L.bend * 0.72 : L.bend * 0.5;
+  const a3 = L.bend * 0.30;
+
+  const knee = root.clone().add(
+    V(side * (L.spread * 0.06 + Math.sin(splay) * L.upperLength), -L.upperLength * Math.cos(a1), L.upperLength * Math.sin(a1)),
+  );
+  const hock = knee.clone().add(
+    V(side * L.spread * 0.02, -L.lowerLength * Math.cos(a2), -L.lowerLength * Math.sin(a2)),
+  );
+  const ankle = digi
+    ? hock.clone().add(V(0, -(L.pastern ?? 0) * Math.cos(a3), (L.pastern ?? 0) * Math.sin(a3)))
+    : hock;
 
   // Haunch: a big mass over the hip. Skinny legs on a round body read as
   // sticks; the haunch is what makes the stance look like it carries weight.
   const haunch = blob({ detail: 3, radius: 1 });
-  haunch.scale(L.upperRadius * 1.5, L.upperLength * 0.95, L.upperRadius * 1.9);
+  haunch.scale(L.upperRadius * 1.62, L.upperLength * (digi ? 0.78 : 0.95), L.upperRadius * 2.0);
   part.add(
     'secondary',
-    xf(haunch, { pos: [root.x + side * L.upperRadius * 0.15, root.y - L.upperLength * 0.28, root.z] }),
+    xf(haunch, { pos: [root.x + side * L.upperRadius * 0.15, root.y - L.upperLength * 0.26, root.z] }),
   );
 
-  const thigh = taperedTube(
-    new THREE.CatmullRomCurve3([root, new THREE.Vector3().lerpVectors(root, knee, 0.5), knee]),
-    (u) => THREE.MathUtils.lerp(L.upperRadius, L.lowerRadius * 1.05, u),
-    6,
-    10,
+  part.add(
+    'primary',
+    taperedTube(
+      new THREE.CatmullRomCurve3([root, new THREE.Vector3().lerpVectors(root, knee, 0.5), knee]),
+      (u) => THREE.MathUtils.lerp(L.upperRadius, L.lowerRadius * 1.05, u),
+      7,
+      10,
+    ),
   );
-  part.add('primary', thigh);
 
-  const shin = taperedTube(
-    new THREE.CatmullRomCurve3([knee, new THREE.Vector3().lerpVectors(knee, ankle, 0.5), ankle]),
-    (u) => THREE.MathUtils.lerp(L.lowerRadius * 1.05, L.footRadius * 0.82, u),
-    6,
-    10,
+  part.add(
+    digi ? 'primary' : 'secondary',
+    taperedTube(
+      new THREE.CatmullRomCurve3([knee, new THREE.Vector3().lerpVectors(knee, hock, 0.5), hock]),
+      (u) => THREE.MathUtils.lerp(L.lowerRadius * 1.05, (digi ? L.lowerRadius * 0.6 : L.footRadius * 0.82), u),
+      7,
+      10,
+    ),
   );
-  part.add(kind === 'leg' ? 'secondary' : 'primary', shin);
+
+  if (digi) {
+    // Hock joint bulge, then the long metatarsus down to the toes.
+    const j = blob({ detail: 2, radius: L.lowerRadius * 0.86 });
+    part.add('secondary', xf(j, { pos: [hock.x, hock.y, hock.z] }));
+    part.add(
+      'secondary',
+      taperedTube(
+        new THREE.CatmullRomCurve3([hock, new THREE.Vector3().lerpVectors(hock, ankle, 0.5), ankle]),
+        (u) => THREE.MathUtils.lerp(L.lowerRadius * 0.6, L.footRadius * 0.60, u),
+        6,
+        9,
+      ),
+    );
+  }
 
   buildFoot(part, ankle, L, side, sp);
   return part;
@@ -796,21 +1270,15 @@ function buildArm(
   sp: Species,
 ): { upper: Part; lower: Part } {
   const upper = new Part(name, parent, shoulder);
+  const outward = 0.22 + (L.splay ?? 0);
 
-  const outward = 0.30;
   const elbow = shoulder
     .clone()
-    .add(
-      new THREE.Vector3(
-        side * L.upperLength * Math.sin(outward),
-        -L.upperLength * Math.cos(outward),
-        L.forward * 0.4,
-      ),
-    );
+    .add(V(side * L.upperLength * Math.sin(outward), -L.upperLength * Math.cos(outward), L.forward * 0.4));
   const wrist = elbow
     .clone()
     .add(
-      new THREE.Vector3(
+      V(
         side * L.lowerLength * Math.sin(outward * 0.3),
         -L.lowerLength * Math.cos(L.bend * 0.8),
         L.lowerLength * Math.sin(L.bend * 0.8),
@@ -818,7 +1286,7 @@ function buildArm(
     );
 
   const deltoid = blob({ detail: 3, radius: 1 });
-  deltoid.scale(L.upperRadius * 1.42, L.upperRadius * 1.5, L.upperRadius * 1.42);
+  deltoid.scale(L.upperRadius * 1.55, L.upperRadius * 1.62, L.upperRadius * 1.5);
   upper.add('secondary', xf(deltoid, { pos: [shoulder.x, shoulder.y, shoulder.z] }));
 
   upper.add(
@@ -826,7 +1294,7 @@ function buildArm(
     taperedTube(
       new THREE.CatmullRomCurve3([shoulder, new THREE.Vector3().lerpVectors(shoulder, elbow, 0.5), elbow]),
       (u) => THREE.MathUtils.lerp(L.upperRadius, L.lowerRadius, u),
-      6,
+      7,
       10,
     ),
   );
@@ -837,7 +1305,7 @@ function buildArm(
     taperedTube(
       new THREE.CatmullRomCurve3([elbow, new THREE.Vector3().lerpVectors(elbow, wrist, 0.5), wrist]),
       (u) => THREE.MathUtils.lerp(L.lowerRadius, L.footRadius * 0.8, u),
-      6,
+      7,
       10,
     ),
   );
@@ -846,18 +1314,14 @@ function buildArm(
 }
 
 function buildFoot(part: Part, ankle: THREE.Vector3, L: LimbShape, side: number, sp: Species) {
-  const foot = blob({
-    detail: 3,
-    radius: 1,
-    profile: (y) => ({ w: 1 - 0.2 * Math.max(0, y) }),
-  });
+  const foot = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.2 * Math.max(0, y) }) });
   foot.scale(L.footRadius, L.footRadius * 0.62, L.footLength * 0.62);
-  const centre = new THREE.Vector3(ankle.x, L.footRadius * 0.5, ankle.z + L.footLength * 0.22);
+  const centre = V(ankle.x, Math.min(ankle.y, L.footRadius * 0.5), ankle.z + L.footLength * 0.22);
   part.add('secondary', xf(foot, { pos: [centre.x, centre.y, centre.z] }));
 
   const pad = blob({ detail: 2, radius: 1 });
   pad.scale(L.footRadius * 0.72, L.footRadius * 0.3, L.footLength * 0.36);
-  part.add('belly', xf(pad, { pos: [centre.x, L.footRadius * 0.18, centre.z + L.footLength * 0.1] }));
+  part.add('belly', xf(pad, { pos: [centre.x, centre.y - L.footRadius * 0.32, centre.z + L.footLength * 0.1] }));
 
   const spanA = -0.55;
   for (let i = 0; i < L.digits; i++) {
@@ -868,14 +1332,14 @@ function buildFoot(part: Part, ankle: THREE.Vector3, L: LimbShape, side: number,
     toe.scale(L.footRadius * 0.3, L.footRadius * 0.3, toeLen);
     const tx = centre.x + Math.sin(a) * L.footRadius * 0.62;
     const tz = centre.z + L.footLength * 0.3 + Math.cos(a) * toeLen * 0.3;
-    part.add('secondary', xf(toe, { pos: [tx, L.footRadius * 0.34, tz] }));
+    part.add('secondary', xf(toe, { pos: [tx, centre.y - L.footRadius * 0.16, tz] }));
 
     if (L.clawLength > 0.004) {
       const claw = spike(L.clawLength, L.footRadius * 0.2, 0.9, 6, 6);
       orientUp(
         claw,
-        new THREE.Vector3(tx, L.footRadius * 0.34, tz + toeLen * 0.72),
-        new THREE.Vector3(Math.sin(a) * 0.2, -0.18, 1).normalize(),
+        V(tx, centre.y - L.footRadius * 0.16, tz + toeLen * 0.72),
+        V(Math.sin(a) * 0.2, -0.18, 1).normalize(),
       );
       part.add('claw', claw);
     }
@@ -886,14 +1350,14 @@ function buildFoot(part: Part, ankle: THREE.Vector3, L: LimbShape, side: number,
 
 function buildHand(part: Part, wrist: THREE.Vector3, L: LimbShape, side: number, sp: Species) {
   const hand = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.18 * Math.abs(y) }) });
-  hand.scale(L.footRadius * 0.9, L.footRadius, L.footRadius * 0.86);
-  const centre = wrist.clone().add(new THREE.Vector3(0, -L.footRadius * 0.5, L.footLength * 0.12));
+  hand.scale(L.footRadius * 0.95, L.footRadius * 1.05, L.footRadius * 0.9);
+  const centre = wrist.clone().add(V(0, -L.footRadius * 0.5, L.footLength * 0.12));
   part.add('secondary', xf(hand, { pos: [centre.x, centre.y, centre.z] }));
 
   for (let i = 0; i < L.digits; i++) {
     const u = L.digits === 1 ? 0.5 : i / (L.digits - 1);
     const a = (-0.5 + u) * 1.15;
-    const dir = new THREE.Vector3(Math.sin(a) * 0.55 * side, -0.72, 0.42).normalize();
+    const dir = V(Math.sin(a) * 0.55 * side, -0.72, 0.42).normalize();
     const fingerLen = L.footLength * 0.5;
     const g = taperedTube(
       new THREE.CatmullRomCurve3([
@@ -901,7 +1365,7 @@ function buildHand(part: Part, wrist: THREE.Vector3, L: LimbShape, side: number,
         centre.clone().addScaledVector(dir, fingerLen * 0.55),
         centre.clone().addScaledVector(dir, fingerLen),
       ]),
-      (t) => L.footRadius * 0.3 * (1 - 0.35 * t),
+      (tt) => L.footRadius * 0.3 * (1 - 0.35 * tt),
       5,
       7,
     );
@@ -927,13 +1391,13 @@ function buildTailTip(
   tl: { length: number; radius: number },
   sp: Species,
 ) {
-  const back = new THREE.Vector3(0, 0.25, -1).normalize();
+  const back = V(0, 0.25, -1).normalize();
   switch (kind) {
     case 'leaf': {
       for (let i = 0; i < 3; i++) {
         const a = (i - 1) * 0.6;
         const g = leaf(tl.length * 0.42, tl.length * 0.24, tl.radius * 0.5);
-        orientUp(g, tip, new THREE.Vector3(Math.sin(a) * 0.6, 0.55, -0.8).normalize(), 0);
+        orientUp(g, tip, V(Math.sin(a) * 0.6, 0.55, -0.8).normalize(), 0);
         part.add(i === 1 ? 'primary' : 'accent', g);
       }
       break;
@@ -943,16 +1407,13 @@ function buildTailTip(
       part.add('metal', xf(bulb, { pos: [tip.x, tip.y, tip.z] }));
       for (let i = 0; i < 3; i++) {
         const g = spike(tl.length * (0.34 - i * 0.06), tl.radius * (0.55 - i * 0.1), 0.5, 8, 7);
-        orientUp(
-          g,
-          tip.clone().addScaledVector(back, tl.radius * 0.5),
-          new THREE.Vector3((i - 1) * 0.45, 1, -0.25).normalize(),
-        );
+        orientUp(g, tip.clone().addScaledVector(back, tl.radius * 0.5), V((i - 1) * 0.45, 1, -0.25).normalize());
         part.add('glow', g);
       }
       break;
     }
-    case 'paddle': {
+    case 'paddle':
+    case 'fin': {
       const g = splinePlate(
         [
           [0, 0],
@@ -974,7 +1435,7 @@ function buildTailTip(
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + 0.4;
         const g = spike(tl.length * 0.3, tl.radius * 0.34, 0.2, 6, 5);
-        orientUp(g, tip, new THREE.Vector3(Math.cos(a) * 0.8, Math.sin(a) * 0.8, -0.5).normalize());
+        orientUp(g, tip, V(Math.cos(a) * 0.8, Math.sin(a) * 0.8, -0.5).normalize());
         part.add('metal', g);
       }
       break;
@@ -1008,6 +1469,7 @@ function buildTailTip(
 interface FeatureCtx {
   sp: Species;
   rnd: () => number;
+  frame: Frame;
   hips: Part;
   torso: Part;
   chest: Part;
@@ -1020,6 +1482,7 @@ interface FeatureCtx {
   chestY: number;
   headAbs: THREE.Vector3;
   headFrontZ: number;
+  tailParts: Part[];
 }
 
 function buildFeature(
@@ -1031,6 +1494,7 @@ function buildFeature(
   const s = c.sp.shape;
   const hd = s.head;
   const t = s.torso;
+  const fr = c.frame;
 
   switch (f.kind) {
     case 'leafCrest': {
@@ -1039,16 +1503,15 @@ function buildFeature(
         const a = (u - 0.5) * f.spread * 2;
         const len = f.length * (1 - Math.abs(u - 0.5) * 0.42);
         const g = leaf(len, f.width * (1 - Math.abs(u - 0.5) * 0.3), hd.radius * 0.06);
-        const dir = new THREE.Vector3(Math.sin(a), Math.cos(a) * 1.0, Math.sin(f.pitch)).normalize();
-        orientUp(g, new THREE.Vector3(0, hd.y + hd.radius * 0.72, hd.z - hd.radius * 0.06), dir, Math.PI / 2);
+        const dir = V(Math.sin(a), Math.cos(a) * 1.0, Math.sin(f.pitch)).normalize();
+        orientUp(g, V(0, hd.y + hd.radius * 0.72, hd.z - hd.radius * 0.06), dir, Math.PI / 2);
         c.crest.add(i === Math.floor(f.count / 2) ? 'primary' : 'secondary', g);
 
-        // Stem, so the leaves do not float free of the skull.
         const stem = taperedTube(
           new THREE.CatmullRomCurve3([
-            new THREE.Vector3(0, hd.y + hd.radius * 0.4, hd.z - hd.radius * 0.06),
-            new THREE.Vector3(0, hd.y + hd.radius * 0.62, hd.z - hd.radius * 0.06),
-            new THREE.Vector3(0, hd.y + hd.radius * 0.78, hd.z - hd.radius * 0.06).addScaledVector(dir, len * 0.1),
+            V(0, hd.y + hd.radius * 0.4, hd.z - hd.radius * 0.06),
+            V(0, hd.y + hd.radius * 0.62, hd.z - hd.radius * 0.06),
+            V(0, hd.y + hd.radius * 0.78, hd.z - hd.radius * 0.06).addScaledVector(dir, len * 0.1),
           ]),
           (u2) => hd.radius * 0.075 * (1 - 0.4 * u2),
           5,
@@ -1060,14 +1523,14 @@ function buildFeature(
     }
 
     case 'longEars': {
-      const l = new Part('earL', c.head, new THREE.Vector3(-hd.radius * hd.width * 0.82, hd.y + hd.radius * 0.3, hd.z));
-      const r = new Part('earR', c.head, new THREE.Vector3(hd.radius * hd.width * 0.82, hd.y + hd.radius * 0.3, hd.z));
+      const l = new Part('earL', c.head, V(-hd.radius * hd.width * 0.82, hd.y + hd.radius * 0.3, hd.z));
+      const r = new Part('earR', c.head, V(hd.radius * hd.width * 0.82, hd.y + hd.radius * 0.3, hd.z));
       for (const [part, side] of [
         [l, -1],
         [r, 1],
       ] as Array<[Part, number]>) {
         const base = part.abs.clone();
-        const dir = new THREE.Vector3(side * 0.72, 1 - f.droop * 0.9, -f.back).normalize();
+        const dir = V(side * 0.72, 1 - f.droop * 0.9, -f.back).normalize();
         const g = leaf(f.length, f.width, hd.radius * 0.055);
         orientUp(g, base, dir, Math.PI / 2);
         part.add('primary', g);
@@ -1080,14 +1543,14 @@ function buildFeature(
     }
 
     case 'roundEars': {
-      const l = new Part('earL', c.head, new THREE.Vector3(-hd.radius * hd.width * 0.68, hd.y + hd.radius * f.height, hd.z - hd.radius * 0.08));
-      const r = new Part('earR', c.head, new THREE.Vector3(hd.radius * hd.width * 0.68, hd.y + hd.radius * f.height, hd.z - hd.radius * 0.08));
+      const l = new Part('earL', c.head, V(-hd.radius * hd.width * 0.68, hd.y + hd.radius * f.height, hd.z - hd.radius * 0.08));
+      const r = new Part('earR', c.head, V(hd.radius * hd.width * 0.68, hd.y + hd.radius * f.height, hd.z - hd.radius * 0.08));
       for (const [part, side] of [
         [l, -1],
         [r, 1],
       ] as Array<[Part, number]>) {
         const base = part.abs.clone();
-        const dir = new THREE.Vector3(side * Math.sin(f.splay), Math.cos(f.splay), -0.1).normalize();
+        const dir = V(side * Math.sin(f.splay), Math.cos(f.splay), -0.1).normalize();
         const shell = blob({ detail: 3, radius: 1, profile: (y) => ({ w: 1 - 0.16 * y }) });
         shell.scale(f.radius, f.radius * 1.15, f.radius * 0.42);
         orientUp(shell, base.clone().addScaledVector(dir, f.radius * 0.7), dir);
@@ -1101,22 +1564,56 @@ function buildFeature(
       return { ears: [l, r] };
     }
 
+    case 'finEars': {
+      // Swept membrane fins off the back of the skull -- the aquatic and
+      // storm answer to an ear, and a wide horizontal break in the silhouette.
+      const l = new Part('earL', c.head, V(-hd.radius * hd.width * 0.72, hd.y + hd.radius * 0.18, hd.z - hd.radius * 0.35));
+      const r = new Part('earR', c.head, V(hd.radius * hd.width * 0.72, hd.y + hd.radius * 0.18, hd.z - hd.radius * 0.35));
+      for (const [part, side] of [
+        [l, -1],
+        [r, 1],
+      ] as Array<[Part, number]>) {
+        const base = part.abs.clone();
+        const dir = V(side * Math.sin(f.splay), Math.cos(f.splay) * 0.55 + 0.2, -0.55).normalize();
+        const g = splinePlate(
+          [
+            [0, 0],
+            [f.width * 0.5, f.length * 0.30],
+            [f.width * 0.34, f.length * 0.72],
+            [0, f.length],
+            [-f.width * 0.42, f.length * 0.55],
+            [-f.width * 0.36, f.length * 0.12],
+          ],
+          hd.radius * 0.05,
+        );
+        orientUp(g, base, dir, side * Math.PI * 0.5);
+        part.add('accent', g);
+        // Ribs, so the fin reads as a fin and not a paddle.
+        for (let i = 0; i < 3; i++) {
+          const rib = spike(f.length * (0.85 - i * 0.16), hd.radius * 0.030, 0.2, 6, 5);
+          const rd = dir.clone().add(V(side * (i - 1) * 0.18, 0, 0)).normalize();
+          orientUp(rib, base, rd);
+          part.add('secondary', rib);
+        }
+      }
+      return { ears: [l, r] };
+    }
+
     case 'antlers': {
       for (const side of [-1, 1]) {
-        const base = new THREE.Vector3(side * hd.radius * f.spread, hd.y + hd.radius * 0.62, hd.z - hd.radius * 0.12);
-        const dir = new THREE.Vector3(side * 0.5, 1, -0.28).normalize();
+        const base = V(side * hd.radius * f.spread, hd.y + hd.radius * 0.62, hd.z - hd.radius * 0.12);
+        const dir = V(side * 0.5, 1, -0.28).normalize();
         const main = spike(f.length, hd.radius * 0.11, 0.5, 12, 8);
         orientUp(main, base, dir);
         c.crest.add('claw', main);
         for (let i = 1; i <= f.tines; i++) {
           const u = i / (f.tines + 1);
           const at = base.clone().addScaledVector(dir, f.length * u * 0.92);
-          const tdir = new THREE.Vector3(side * (0.5 + u * 0.5), 0.8, -0.2 + u * 0.5).normalize();
+          const tdir = V(side * (0.5 + u * 0.5), 0.8, -0.2 + u * 0.5).normalize();
           const tine = spike(f.length * (0.5 - u * 0.16), hd.radius * 0.055, 0.6, 8, 6);
           orientUp(tine, at, tdir);
           c.crest.add('claw', tine);
         }
-        // Brass cap where the Thicket has grown into the antler.
         const capG = new THREE.CylinderGeometry(hd.radius * 0.075, hd.radius * 0.085, hd.radius * 0.13, 10);
         orientUp(capG, base.clone().addScaledVector(dir, f.length * 0.32), dir);
         c.crest.add('metal', capG);
@@ -1126,8 +1623,8 @@ function buildFeature(
 
     case 'horns': {
       for (const side of [-1, 1]) {
-        const base = new THREE.Vector3(side * f.spread, hd.y + hd.radius * 0.58, hd.z - hd.radius * 0.2);
-        const dir = new THREE.Vector3(side * 0.34, Math.cos(f.pitch), Math.sin(f.pitch)).normalize();
+        const base = V(side * f.spread, hd.y + hd.radius * 0.58, hd.z - hd.radius * 0.2);
+        const dir = V(side * 0.34, Math.cos(f.pitch), Math.sin(f.pitch)).normalize();
         const g = spike(f.length, f.radius, f.bend, 10, 8);
         orientUp(g, base, dir);
         c.crest.add('metal', g);
@@ -1138,12 +1635,8 @@ function buildFeature(
     case 'stacks': {
       for (let i = 0; i < f.count; i++) {
         const side = f.count === 1 ? 0 : (i / (f.count - 1)) * 2 - 1;
-        const base = new THREE.Vector3(
-          side * f.spread,
-          c.torsoTop - t.height * 0.3,
-          -t.radius * t.depth * 0.42,
-        );
-        const dir = new THREE.Vector3(side * 0.22, 1, -Math.sin(f.lean)).normalize();
+        const base = fr.at(0.62).clone().addScaledVector(fr.dorsal, t.radius * 0.5).add(V(side * f.spread, 0, 0));
+        const dir = V(side * 0.22, 1, -Math.sin(f.lean)).normalize();
         const g = pipe(f.radius, f.height, 1.4, 12);
         orientUp(g, base, dir);
         c.torso.add('metal', g);
@@ -1163,12 +1656,12 @@ function buildFeature(
           const u = f.perRow === 1 ? 0.5 : i / (f.perRow - 1);
           const a = (u - 0.5) * f.spread * 2;
           const len = f.length * (0.62 + 0.38 * Math.sin(Math.PI * v)) * (1 - Math.abs(u - 0.5) * 0.5);
-          const base = new THREE.Vector3(
-            Math.sin(a) * t.radius * 0.95,
-            c.torsoY + t.height * (0.55 - v * 0.5),
-            -t.radius * t.depth * (0.1 + v * 0.95) + Math.cos(a) * t.radius * 0.1,
-          );
-          const dir = new THREE.Vector3(Math.sin(a) * 0.85, 0.75 - v * 0.35, -0.45 - v * 0.45).normalize();
+          const base = fr
+            .at(0.55 - v * 1.0)
+            .clone()
+            .addScaledVector(fr.dorsal, t.radius * (0.6 + v * 0.3))
+            .add(V(Math.sin(a) * t.radius * 0.95, 0, 0));
+          const dir = V(Math.sin(a) * 0.85, 0.75 - v * 0.35, -0.45 - v * 0.45).normalize();
           const g = spike(len, t.radius * 0.075 * (1 - v * 0.25), 0.18, 8, 6);
           orientUp(g, base, dir);
           c.torso.add(row % 2 === 0 ? 'metal' : 'dark', g);
@@ -1193,7 +1686,6 @@ function buildFeature(
       const g = plate(pts, t.radius * 0.14, t.radius * 0.045);
       g.rotateY(Math.PI / 2);
       c.torso.add('accent', xf(g, { pos: [0, c.torsoY + t.height * 0.72, 0] }));
-      // Ribs across the sail.
       for (let i = 1; i < 5; i++) {
         const u = i / 5;
         const z = THREE.MathUtils.lerp(f.start, f.end, u);
@@ -1205,22 +1697,20 @@ function buildFeature(
     }
 
     case 'wings': {
-      const shoulderY = c.chestY + t.height * 0.25;
-      const l = new Part('wingL', c.chest, new THREE.Vector3(-t.radius * 0.72, shoulderY, -t.radius * t.depth * 0.5));
-      const r = new Part('wingR', c.chest, new THREE.Vector3(t.radius * 0.72, shoulderY, -t.radius * t.depth * 0.5));
+      const shoulder = fr.at(t.shoulderY + 0.28).clone().addScaledVector(fr.dorsal, t.radius * 0.42);
+      const l = new Part('wingL', c.chest, V(-t.radius * 0.72, shoulder.y, shoulder.z));
+      const r = new Part('wingR', c.chest, V(t.radius * 0.72, shoulder.y, shoulder.z));
       for (const [part, side] of [
         [l, -1],
         [r, 1],
       ] as Array<[Part, number]>) {
         const base = part.abs.clone();
-        // Feathers as a graded fan of plates. A membrane would read soft;
-        // hard plates keep the Iron identity in the silhouette.
         for (let i = 0; i < f.fingers + 2; i++) {
           const u = i / (f.fingers + 1);
-          const a = THREE.MathUtils.lerp(1.15, -0.35, u);
+          const a = THREE.MathUtils.lerp(1.30, -0.42, u);
           const len = f.span * (0.55 + 0.45 * Math.sin(Math.PI * (0.25 + u * 0.6)));
-          const w = f.chord * (0.30 - u * 0.1);
-          const dir = new THREE.Vector3(side * Math.cos(a), Math.sin(a) - f.droop * u, -0.18 - u * 0.5).normalize();
+          const w = f.chord * (0.32 - u * 0.1);
+          const dir = V(side * Math.cos(a), Math.sin(a) - f.droop * u, -0.18 - u * 0.55).normalize();
           const g = splinePlate(
             [
               [0, 0],
@@ -1257,13 +1747,14 @@ function buildFeature(
     }
 
     case 'shoulderCogs': {
+      const at = fr.at(t.shoulderY + 0.16);
       for (const side of [-1, 1]) {
         const g = cog(f.radius, f.teeth, f.radius * 0.28, 0.22, 0.32);
         g.rotateY(Math.PI / 2);
         c.chest.add(
           'metal',
           xf(g, {
-            pos: [side * (t.radius * t.shoulderX + f.radius * 0.1), c.chestY + t.height * 0.16, -t.radius * 0.1],
+            pos: [side * (t.radius * t.shoulderX + f.radius * 0.1), at.y, at.z - t.radius * 0.1],
             rot: [0, 0, side * 0.2],
           }),
         );
@@ -1272,29 +1763,26 @@ function buildFeature(
     }
 
     case 'chestPlate': {
+      const at = fr.at(t.shoulderY - 0.05).clone().addScaledVector(fr.ventral, t.radius * t.depth * 0.85);
       const g = blob({
         detail: 3,
         radius: 1,
         profile: (y) => ({ w: 1 - 0.24 * Math.abs(y) - 0.16 * Math.max(0, y) }),
       });
       g.scale(f.width, f.height, t.radius * 0.34);
-      leanAboutHip(g, t.lean, c.hipY - c.chestY + t.height * 0.1);
-      c.torso.add(
-        f.grate ? 'metal' : 'belly',
-        xf(g, { pos: [0, c.chestY - t.height * 0.05, t.radius * t.depth * 0.85 + t.chest * t.radius * 0.16] }),
-      );
+      pitchAbout(g, fr.pitch + t.lean, V(0, 0, 0));
+      g.translate(at.x, at.y, at.z);
+      c.torso.add(f.grate ? 'metal' : 'belly', g);
       if (f.grate) {
         for (let i = 0; i < 4; i++) {
-          const y = c.chestY - t.height * 0.05 + (i - 1.5) * f.height * 0.34;
+          const off = (i - 1.5) * f.height * 0.34;
+          const p = at.clone().addScaledVector(fr.axis, off).addScaledVector(fr.ventral, t.radius * 0.1);
           const bar = new THREE.BoxGeometry(f.width * 1.24, f.height * 0.14, t.radius * 0.2);
-          c.torso.add('dark', xf(bar, { pos: [0, y, t.radius * t.depth * 0.95 + t.chest * t.radius * 0.16] }));
-          const emitter = new THREE.BoxGeometry(f.width * 1.1, f.height * 0.12, t.radius * 0.16);
-          c.torso.add(
-            'glow',
-            xf(emitter, {
-              pos: [0, y + f.height * 0.17, t.radius * t.depth * 0.93 + t.chest * t.radius * 0.16],
-            }),
-          );
+          pitchAbout(bar, fr.pitch, V(0, 0, 0));
+          c.torso.add('dark', xf(bar, { pos: [p.x, p.y, p.z] }));
+          const emitter = new THREE.BoxGeometry(f.width * 1.05, f.height * 0.11, t.radius * 0.16);
+          const pe = p.clone().addScaledVector(fr.axis, f.height * 0.17).addScaledVector(fr.ventral, t.radius * 0.03);
+          c.torso.add('glow', xf(emitter, { pos: [pe.x, pe.y, pe.z] }));
         }
       }
       break;
@@ -1304,12 +1792,13 @@ function buildFeature(
       for (let i = 0; i < f.count; i++) {
         const u = f.count === 1 ? 0.5 : i / (f.count - 1);
         const a = (u - 0.5) * Math.PI * f.spread;
-        const base = new THREE.Vector3(
+        const ring = fr.at(t.shoulderY + 0.22);
+        const base = V(
           Math.sin(a) * t.radius * 0.8,
-          c.chestY + t.height * 0.22,
-          -Math.cos(a) * t.radius * t.depth * 0.55 + t.radius * 0.1,
+          ring.y + Math.cos(a) * fr.dorsal.y * t.radius * t.depth * 0.55,
+          ring.z + Math.cos(a) * fr.dorsal.z * t.radius * t.depth * 0.55,
         );
-        const dir = new THREE.Vector3(Math.sin(a) * 0.9, 0.55, -Math.cos(a) * 0.75).normalize();
+        const dir = V(Math.sin(a) * 0.9, 0.55, -Math.cos(a) * 0.75).normalize();
         const g = spike(f.length * (0.7 + 0.3 * Math.cos(a)), t.radius * 0.115, 0.4, 7, 6);
         orientUp(g, base, dir);
         c.chest.add(i % 2 === 0 ? 'secondary' : 'primary', g);
@@ -1320,9 +1809,9 @@ function buildFeature(
     case 'backPlates': {
       for (let i = 0; i < f.count; i++) {
         const u = i / (f.count - 1 || 1);
-        const y = THREE.MathUtils.lerp(c.torsoTop - t.height * 0.12, c.hipY + t.height * 0.35, u);
-        const z = -t.radius * t.depth * (0.55 + u * 0.28);
+        const along = THREE.MathUtils.lerp(0.88, -0.65, u);
         const size = f.size * (1 - Math.abs(u - 0.25) * 0.5);
+        const p = fr.at(along).clone().addScaledVector(fr.dorsal, t.radius * (0.55 + u * 0.28) * t.depth);
         const g = plate(
           [
             [0, 0],
@@ -1334,7 +1823,7 @@ function buildFeature(
           size * 0.08,
         );
         g.rotateY(Math.PI / 2);
-        c.torso.add('metal', xf(g, { pos: [0, y, z], rot: [-0.5 + u * 0.6, 0, 0] }));
+        c.torso.add('metal', xf(g, { pos: [p.x, p.y, p.z], rot: [-0.5 + u * 0.6, 0, 0] }));
       }
       break;
     }
@@ -1343,9 +1832,10 @@ function buildFeature(
       const g = new THREE.TorusGeometry(f.radius, f.tube, 8, 20);
       g.rotateX(Math.PI / 2);
       const y = THREE.MathUtils.lerp(c.chestY, c.headAbs.y - hd.radius * 0.6, 0.55);
-      c.neck.add('metal', xf(g, { pos: [0, y, c.headAbs.z * 0.4], rot: [0.3, 0, 0] }));
+      const z = THREE.MathUtils.lerp(fr.chest.z, c.headAbs.z, 0.55);
+      c.neck.add('metal', xf(g, { pos: [0, y, z], rot: [0.3, 0, 0] }));
       const stud = blob({ detail: 2, radius: f.tube * 1.9 });
-      c.neck.add('accent', xf(stud, { pos: [0, y - f.tube * 0.4, c.headAbs.z * 0.4 + f.radius * 0.95] }));
+      c.neck.add('accent', xf(stud, { pos: [0, y - f.tube * 0.4, z + f.radius * 0.95] }));
       break;
     }
 
@@ -1370,11 +1860,80 @@ function buildFeature(
     }
 
     case 'brandMark': {
+      const at = fr.at(t.shoulderY + 0.1).clone().addScaledVector(fr.ventral, t.radius * t.depth * 1.02);
       const g = cog(f.radius, 8, f.radius * 0.34, 0.26, 0.36);
-      c.torso.add(
-        'accent',
-        xf(g, { pos: [0, c.chestY + t.height * 0.1, t.radius * t.depth * 1.02 + t.chest * t.radius * 0.16], rot: [-0.2, 0, 0] }),
-      );
+      c.torso.add('accent', xf(g, { pos: [at.x, at.y, at.z], rot: [-0.2 + fr.pitch * 0.5, 0, 0] }));
+      break;
+    }
+
+    case 'bracers': {
+      // Heavy brass cuffs at the wrists. On a brawler they are the visual
+      // weight that makes the arms read as weapons.
+      if (!s.arms) break;
+      const arms = s.arms;
+      const shoulderY = fr.chest.y + t.height * 0.10;
+      const outward = 0.22 + (arms.splay ?? 0);
+      for (const side of [-1, 1]) {
+        const shoulder = V(side * t.radius * t.shoulderX, shoulderY, fr.chest.z);
+        const elbow = shoulder
+          .clone()
+          .add(V(side * arms.upperLength * Math.sin(outward), -arms.upperLength * Math.cos(outward), arms.forward * 0.4));
+        const wrist = elbow
+          .clone()
+          .add(
+            V(
+              side * arms.lowerLength * Math.sin(outward * 0.3),
+              -arms.lowerLength * Math.cos(arms.bend * 0.8),
+              arms.lowerLength * Math.sin(arms.bend * 0.8),
+            ),
+          );
+        const dir = wrist.clone().sub(elbow).normalize();
+        const g = new THREE.CylinderGeometry(f.radius, f.radius * 1.12, f.width, 14);
+        orientUp(g, wrist.clone().addScaledVector(dir, -f.width * 0.55), dir);
+        c.chest.add('metal', g);
+        for (let i = 0; i < 3; i++) {
+          const a = (i - 1) * 0.9;
+          const stud = spike(f.radius * 0.9, f.radius * 0.26, 0.1, 6, 6);
+          const sd = V(Math.sin(a) * side, 0.1, Math.cos(a)).normalize();
+          orientUp(stud, wrist.clone().addScaledVector(dir, -f.width * 0.55).addScaledVector(sd, f.radius * 0.9), sd);
+          c.chest.add('claw', stud);
+        }
+      }
+      break;
+    }
+
+    case 'pectoralFins': {
+      // Fins riding the serpent's body a fixed distance down the chain.
+      const sr = s.serpent;
+      if (!sr || !c.tailParts.length) break;
+      const curve = serpentCurve(c.sp);
+      const p = curve.getPointAt(f.at);
+      const tan = curve.getTangentAt(f.at);
+      const idx = Math.min(c.tailParts.length - 1, Math.floor(f.at * sr.segments));
+      const host = c.tailParts[idx];
+      for (const side of [-1, 1]) {
+        const out = new THREE.Vector3().crossVectors(tan, UP).normalize().multiplyScalar(side);
+        const dir = out.clone().addScaledVector(UP, 0.30).addScaledVector(tan, -0.35).normalize();
+        const g = splinePlate(
+          [
+            [0, 0],
+            [f.width * 0.5, f.length * 0.32],
+            [f.width * 0.30, f.length * 0.78],
+            [0, f.length],
+            [-f.width * 0.5, f.length * 0.55],
+            [-f.width * 0.45, f.length * 0.14],
+          ],
+          sr.radius * 0.1,
+        );
+        orientUp(g, p.clone().addScaledVector(out, serpentRadius(c.sp, f.at) * 0.72), dir, side * Math.PI * 0.5);
+        host.add('accent', g);
+        for (let i = 0; i < 3; i++) {
+          const rib = spike(f.length * (0.8 - i * 0.15), sr.radius * 0.05, 0.2, 6, 5);
+          const rd = dir.clone().addScaledVector(tan, (i - 1) * 0.22).normalize();
+          orientUp(rib, p.clone().addScaledVector(out, serpentRadius(c.sp, f.at) * 0.72), rd);
+          host.add('secondary', rib);
+        }
+      }
       break;
     }
   }

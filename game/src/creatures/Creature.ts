@@ -152,9 +152,12 @@ export class Creature {
 
     for (let i = 0; i < r.tail.length; i++) {
       // Travelling wave: each segment lags the one before it, so the tail
-      // whips rather than swinging as a rigid bar.
-      const lag = i * 0.55;
-      const amp = 0.10 + i * 0.035;
+      // whips rather than swinging as a rigid bar. Amplitude and lag are
+      // baked per segment at build time -- a five-link tail and a ten-link
+      // serpent body need completely different numbers, and a drifter's
+      // streamers each restart the phase.
+      const lag = r.tailLag[i] ?? i * 0.55;
+      const amp = r.tailAmp[i] ?? 0.10 + i * 0.035;
       r.tail[i].rotation.y = Math.sin(p * 1.25 - lag) * amp;
       r.tail[i].rotation.x = Math.sin(p * 0.95 - lag * 0.8) * amp * 0.45;
     }
@@ -247,7 +250,8 @@ export class Creature {
       r.wingR.rotation.z += armSwing * 0.35;
     }
     for (let i = 0; i < r.tail.length; i++) {
-      r.tail[i].rotation.x += -lean * (0.35 + i * 0.08);
+      const k = (r.tailAmp[i] ?? 0.1) * 3.2;
+      r.tail[i].rotation.x += -lean * Math.min(0.9, 0.35 + k);
     }
     r.crest.rotation.x += -lean * 0.5;
     r.earL.rotation.x += -lean * 0.6;
