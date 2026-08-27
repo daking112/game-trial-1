@@ -79,48 +79,127 @@ const YAW = -0.62;
 // Measured, not guessed. A creature's *drawn* width is what has to be
 // packed -- a raptor with a 3m wingspan needs more room than a 3.4m stag --
 // and the only reliable source for that is the built mesh's own bounds.
-const built = ids.map((id, i) => {
+interface Built {
+  c: Creature;
+  half: number;
+  cx: number;
+  stage: number;
+  /** Index of this creature's evolved form in `built`, if it has one. */
+  evo: number;
+}
+
+const built: Built[] = ids.map((id, i) => {
   const c = new Creature(id, { phase: i * 0.37 });
   c.group.rotation.y = YAW;
   c.group.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(c.group);
-  // Clamp against height: a wingspan may overhang a neighbour's airspace a
-  // little -- that reads as a group shot -- but it must not push the row so
-  // wide that every creature becomes a thumbnail.
-  const edge = i === 0 || i === ids.length - 1;
-  const half = edge
-    ? (b.max.x - b.min.x) * 0.5
-    : Math.min((b.max.x - b.min.x) * 0.5, c.height * 0.78);
-  // Idle animation swings limbs and wings past the measured rest bounds, so
-  // the two creatures that own the plate edges get slack to swing into.
-  return { c, half: Math.max(0.5, half) + (edge ? 0.55 : 0), cx: (b.max.x + b.min.x) * 0.5 };
+  const evoId = SPECIES[id].evolvesTo;
+  return {
+    c,
+    // Idle animation swings limbs past the measured rest bounds, so every
+    // creature gets a little slack to swing into.
+    half: Math.max(0.5, (b.max.x - b.min.x) * 0.5) + 0.16,
+    cx: (b.max.x + b.min.x) * 0.5,
+    stage: SPECIES[id].stage,
+    evo: evoId ? ids.indexOf(evoId) : -1,
+  };
 });
 
-// Pack left to right with a constant air gap, then centre the row.
-const GAP = 0.28;
-const xs: number[] = [];
-let cursor = 0;
-for (const b of built) {
-  cursor += b.half;
-  xs.push(cursor - b.cx);
-  cursor += b.half + GAP;
-}
-const rowWidth = cursor - GAP;
-
-// The `lineup` camera is fixed, so the row is pushed to whatever depth makes
-// it fill the plate: solve for the z where the frustum is just wide enough.
-const CAM = new THREE.Vector3(0, 2.6, 12);
+/*
+ * Two ranks, not one row.
+ *
+ * Eight creatures shoulder to shoulder in a 2:1 plate makes every one of
+ * them a thumbnail and leaves the bottom half of the frame empty. Staging
+ * the four heavies as a back rank and standing each stage 1 in front of its
+ * own evolved form does three things at once: it halves the width that has
+ * to be packed, so everything is nearer and bigger; it puts the small
+ * creatures where their size is an asset rather than a handicap; and it
+ * makes each evolution line legible as a line.
+ */
+const CAM_Z = 12;
 const FOV = 42;
-const aspect = 2.0; // the lineup plate is shot 2:1
-const halfW = Math.tan((FOV * Math.PI) / 360) * aspect;
-const need = (rowWidth * 0.5) / (halfW * 0.985);
-const rowZ = CAM.z - Math.max(8.0, need);
+const PLATE_ASPECT = 2.0;
+const halfW = Math.tan((FOV * Math.PI) / 360) * PLATE_ASPECT;
+const GAP = 0.34;
 
-built.forEach((b, i) => {
-  b.c.group.position.set(xs[i] - rowWidth * 0.5, 0, rowZ);
+const allIdx = built.map((_, i) => i);
+const backIdx = allIdx.filter((i) => built[i].stage === 2);
+const frontIdx = allIdx.filter((i) => built[i].stage === 1);
+
+/** Pack a rank left to right, returning centre offsets and the total width. */
+function pack(indices: number[]) {
+  const centres: number[] = [];
+  let cursor = 0;
+  for (const i of indices) {
+    cursor += built[i].half;
+    centres.push(cursor);
+    cursor += built[i].half + GAP;
+  }
+  return { centres, width: Math.max(0.001, cursor - GAP) };
+}
+
+const back = pack(backIdx);
+const front = pack(frontIdx);
+const depthFor = (w: number) => CAM_Z - (w * 0.5) / (halfW * 0.93);
+
+// The back rank sets the depth of the whole staging; the front rank stands a
+// fixed step nearer, or further if it is too wide to fit that close.
+const zBack = Math.min(depthFor(back.width), depthFor(front.width) - 2.9);
+const zFront = zBack + 2.9;
+
+backIdx.forEach((i, k) => {
+  built[i].c.group.position.set(back.centres[k] - back.width * 0.5 - built[i].cx, 0, zBack);
+});
+// How far off-centre anything at the front rank may stand before the fixed
+// lineup camera starts cropping it.
+const frontLimit = (CAM_Z - zFront) * halfW * 0.95;
+
+// The front rank is spread evenly and then shifted half a body to the left,
+// which lands each stage 1 just off its own evolution's shoulder rather than
+// dead in front of it -- the pair still reads as a pair, and neither one is
+// hidden behind the other.
+const frontStep = (frontLimit * 1.76) / frontIdx.length;
+frontIdx.forEach((i, k) => {
+  const b = built[i];
+  const x = -frontLimit * 0.88 + frontStep * (k + 0.5) - frontStep * 0.40;
+  b.c.group.position.set(
+    THREE.MathUtils.clamp(x, -frontLimit + b.half, frontLimit - b.half) - b.cx,
+    0,
+    zFront,
+  );
+});
+
+// Two stage 1s can both want the same gap between two heavies. Relax the
+// front rank apart along x until nobody is standing inside anybody.
+for (let pass = 0; pass < 24; pass++) {
+  const order = [...frontIdx].sort(
+    (a, b) => built[a].c.group.position.x - built[b].c.group.position.x,
+  );
+  let moved = false;
+  for (let k = 1; k < order.length; k++) {
+    const a = built[order[k - 1]];
+    const b = built[order[k]];
+    const need = a.half + b.half + 0.22;
+    const gap = b.c.group.position.x + b.cx - (a.c.group.position.x + a.cx);
+    if (gap < need) {
+      const push = (need - gap) * 0.5;
+      a.c.group.position.x -= push;
+      b.c.group.position.x += push;
+      moved = true;
+    }
+  }
+  if (!moved) break;
+}
+for (const i of frontIdx) {
+  const b = built[i];
+  const x = THREE.MathUtils.clamp(b.c.group.position.x + b.cx, -frontLimit + b.half, frontLimit - b.half);
+  b.c.group.position.x = x - b.cx;
+}
+
+for (const b of built) {
   engine.scene.add(b.c.group);
   creatures.push(b.c);
-});
+}
 
 engine.onUpdate((dt, elapsed) => {
   for (const c of creatures) c.update(dt, elapsed);

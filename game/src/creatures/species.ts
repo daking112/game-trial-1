@@ -497,6 +497,7 @@ export const SPECIES: Record<string, Species> = {
     element: 'Ember',
     rarity: 'Uncommon',
     stage: 1,
+    evolvesTo: 'forgemaw',
     tagline: 'Eats charcoal, exhales sparks, sleeps on anything still warm.',
     stats: { damage: 9, range: 9, attackSpeed: 1.5, pierce: 2, cost: 340, projectile: 'ember' },
     palette: {
@@ -561,6 +562,92 @@ export const SPECIES: Record<string, Species> = {
   },
 
   /* ---------------------------------------------------------------- *
+   * FORGEMAW -- Emberbellow after the Thicket stoked it. Plan: brawler
+   * still, but the proportions are inverted: the shoulders carry nearly
+   * all the mass, the head is sunk between them, the arms reach the
+   * floor and the legs are short pistons. Where Emberbellow leans into a
+   * punch, this thing simply stands there being heavier than you.
+   * Silhouette test: an anvil on two stumps, with a chimney stack.
+   * ---------------------------------------------------------------- *
+   */
+  forgemaw: {
+    id: 'forgemaw',
+    name: 'Forgemaw',
+    element: 'Ember',
+    rarity: 'Epic',
+    stage: 2,
+    evolvesFrom: 'emberbellow',
+    tagline: 'Swallowed the furnace rather than let the cold have it.',
+    stats: { damage: 26, range: 11, attackSpeed: 0.78, pierce: 3, cost: 860, projectile: 'ember' },
+    palette: {
+      primary: '#c8461f',
+      secondary: '#4c1a14',
+      belly: '#f7c877',
+      accent: '#ffa317',
+      dark: '#1b0c09',
+      metal: '#d0a049',
+      eye: '#fff2b0',
+      glow: '#ff5f0d',
+    },
+    shape: {
+      height: 3.05,
+      plan: 'brawler',
+      hide: 'plate',
+      crouch: 0.34,
+      pose: {
+        bodyYaw: -0.26, bodyLean: 0.16, bodyRoll: -0.04,
+        chestTwist: 0.18, neckPitch: 0.22,
+        headYaw: 0.30, headPitch: 0.16, headRoll: 0.05,
+        legLead: 0.055, stance: 0.070,
+        // Knuckles near the floor: the arms are the read, so they hang.
+        armL: [-0.34, 0.24, 0.30], armR: [0.22, -0.20, -0.24],
+      },
+      fangs: 6,
+      seed: 707,
+      torso: {
+        hipY: 0.330, hipZ: -0.020, pitch: 0.28,
+        radius: 0.250, height: 0.245, belly: 0.06, chest: 0.86,
+        depth: 0.92, lean: 0.10, shoulderY: 0.78, shoulderX: 1.38, waist: 0.46,
+      },
+      neck: { segments: 1, radiusBase: 0.150, radiusTop: 0.108, arch: 0.10, ruff: 0.9 },
+      head: {
+        // Sunk. The crown barely clears the shoulder line, which is what
+        // makes the shoulders look enormous rather than the head look small.
+        y: 0.848, z: 0.190, radius: 0.155, width: 1.16, depth: 1.16,
+        crownFlat: 0.26, brow: 0.86, cheek: 0.62, jaw: 0.74, tilt: 0.16,
+        snout: { length: 0.135, radius: 0.108, tipRadius: 0.082, drop: 0.030, keel: 0.22, spread: 1.18 },
+      },
+      eye: {
+        radius: 0.044, spacing: 0.090, y: 0.880, z: 0.268,
+        splay: 0.40, lid: 0.56, lidTilt: 0.40, mask: 1.0,
+      },
+      arms: {
+        upperLength: 0.290, upperRadius: 0.098, lowerLength: 0.270, lowerRadius: 0.082,
+        footLength: 0.155, footRadius: 0.112, digits: 3, clawLength: 0.062,
+        spread: 0.320, forward: 0.01, bend: 0.36, splay: 0.20,
+      },
+      legs: {
+        upperLength: 0.165, upperRadius: 0.115, lowerLength: 0.150, lowerRadius: 0.088,
+        pastern: 0.070,
+        footLength: 0.185, footRadius: 0.098, digits: 3, clawLength: 0.046,
+        spread: 0.165, forward: 0.0, bend: 0.86, foot: 'paw',
+      },
+      tail: { length: 0.30, radius: 0.088, rise: 0.14, sweep: -0.10, segments: 4, tip: 'ember', wave: 0.8 },
+      features: [
+        { kind: 'stacks', count: 4, height: 0.42, radius: 0.058, spread: 0.215, lean: 0.30 },
+        { kind: 'chestPlate', width: 0.26, height: 0.32, grate: true },
+        { kind: 'horns', length: 0.235, radius: 0.038, spread: 0.116, pitch: -0.66, bend: 0.22 },
+        { kind: 'shoulderCogs', radius: 0.130, teeth: 13 },
+        { kind: 'backPlates', count: 7, size: 0.105 },
+        { kind: 'mane', count: 13, length: 0.20, spread: 1.0 },
+        { kind: 'cheekVents', count: 3, radius: 0.026 },
+        { kind: 'bracers', radius: 0.102, width: 0.090 },
+        { kind: 'brandMark', radius: 0.062 },
+      ],
+    },
+  },
+
+  /* ---------------------------------------------------------------- *
    * RILLSPOUT -- Plan: serpent. No legs at all. A rearing S out of a
    * coiled tail, three times as long as it is tall, with a dorsal fin
    * running the length of the spine and a broad flat head at the top.
@@ -572,6 +659,7 @@ export const SPECIES: Record<string, Species> = {
     element: 'Tide',
     rarity: 'Uncommon',
     stage: 1,
+    evolvesTo: 'sluicewyrm',
     tagline: 'Pressurises millpond water and lets it go all at once.',
     stats: { damage: 7, range: 13, attackSpeed: 1.05, pierce: 4, cost: 300, projectile: 'jet' },
     palette: {
@@ -657,6 +745,108 @@ export const SPECIES: Record<string, Species> = {
         { kind: 'pectoralFins', length: 0.30, width: 0.165, at: 0.19 },
         { kind: 'collar', radius: 0.135, tube: 0.028 },
         { kind: 'cheekVents', count: 3, radius: 0.020 },
+      ],
+    },
+  },
+
+  /* ---------------------------------------------------------------- *
+   * SLUICEWYRM -- Rillspout with a river behind it. Plan: serpent, but
+   * twice the run: a double coil on the floor, a rise that clears three
+   * metres and a pair of pectoral vanes wide enough to read as wings.
+   * Where Rillspout is a question mark, this is a breaking wave.
+   * Silhouette test: a wide, low mass with a tall hook coming out of it.
+   * ---------------------------------------------------------------- *
+   */
+  sluicewyrm: {
+    id: 'sluicewyrm',
+    name: 'Sluicewyrm',
+    element: 'Tide',
+    rarity: 'Epic',
+    stage: 2,
+    evolvesFrom: 'rillspout',
+    tagline: 'Holds a millpond in its chest and opens the gate on command.',
+    stats: { damage: 19, range: 17, attackSpeed: 0.88, pierce: 6, cost: 780, projectile: 'jet' },
+    palette: {
+      primary: '#1e7fa4',
+      secondary: '#0b3247',
+      belly: '#e6f4ef',
+      accent: '#f0c04a',
+      dark: '#04141c',
+      metal: '#c99a3e',
+      eye: '#8ef0ff',
+      glow: '#6ce4ff',
+    },
+    shape: {
+      height: 3.20,
+      plan: 'serpent',
+      hide: 'scale',
+      crouch: 0.0,
+      pose: {
+        bodyYaw: 0.24,
+        neckPitch: -0.24, headYaw: -0.34, headPitch: -0.28, headRoll: -0.05,
+      },
+      fangs: 4,
+      seed: 808,
+      torso: {
+        hipY: 0.30, hipZ: 0, pitch: 0,
+        radius: 0.14, height: 0.16, belly: 0, chest: 0,
+        depth: 1, lean: 0, shoulderY: 0.5, shoulderX: 1,
+      },
+      neck: { segments: 3, radiusBase: 0.140, radiusTop: 0.100, arch: -0.22 },
+      head: {
+        y: 0.945, z: 0.290, radius: 0.128, width: 0.96, depth: 1.72,
+        crownFlat: 0.66, brow: 0.82, cheek: 0.16, jaw: 0.30, tilt: 0.10,
+        snout: { length: 0.330, radius: 0.074, tipRadius: 0.030, drop: 0.010, keel: 0.82, spread: 1.02 },
+      },
+      eye: {
+        radius: 0.044, spacing: 0.086, y: 0.986, z: 0.352,
+        splay: 0.76, lid: 0.46, lidTilt: 0.30, mask: 1.0,
+      },
+      arms: null,
+      legs: null,
+      serpent: {
+        /*
+         * Two coils, not one. The extra loop is the whole point of the
+         * evolution: it doubles the ground footprint without touching the
+         * height, so the creature reads as *more animal* rather than as the
+         * same animal scaled up -- which is the failure mode of every
+         * stage-2 that is just a bigger stage-1.
+         */
+        path: [
+          [0.000, 0.858, 0.300],
+          [0.004, 0.780, 0.198],
+          [0.010, 0.694, 0.086],
+          [0.014, 0.600, -0.020],
+          [0.010, 0.500, -0.096],
+          [-0.004, 0.400, -0.128],
+          [-0.030, 0.306, -0.104],
+          [-0.066, 0.222, -0.026],
+          [-0.096, 0.156, 0.098],
+          [-0.086, 0.112, 0.236],
+          [-0.010, 0.096, 0.356],
+          [0.126, 0.092, 0.418],
+          [0.286, 0.092, 0.386],
+          [0.406, 0.094, 0.262],
+          [0.452, 0.098, 0.096],
+          [0.416, 0.104, -0.078],
+          [0.306, 0.112, -0.204],
+          [0.152, 0.124, -0.252],
+          [0.000, 0.164, -0.212],
+          [-0.124, 0.216, -0.100],
+          [-0.166, 0.276, 0.048],
+          [-0.120, 0.336, 0.180],
+        ],
+        radius: 0.155, swell: 0.24, segments: 18,
+        fins: 18, finHeight: 0.135, finEnd: 0.58,
+        scutes: 26,
+      },
+      tail: null,
+      features: [
+        { kind: 'finEars', length: 0.36, width: 0.190, splay: 1.00 },
+        { kind: 'pectoralFins', length: 0.32, width: 0.180, at: 0.22 },
+        { kind: 'horns', length: 0.230, radius: 0.030, spread: 0.070, pitch: -0.52, bend: 0.40 },
+        { kind: 'collar', radius: 0.150, tube: 0.032 },
+        { kind: 'cheekVents', count: 4, radius: 0.020 },
       ],
     },
   },
@@ -802,11 +992,14 @@ export const SPECIES: Record<string, Species> = {
   },
 };
 
+/** Display order: each evolution line reads as an adjacent pair. */
 export const SPECIES_ORDER: string[] = [
   'fernlet',
   'thornwarden',
   'emberbellow',
+  'forgemaw',
   'rillspout',
+  'sluicewyrm',
   'voltquill',
   'gearhawk',
 ];

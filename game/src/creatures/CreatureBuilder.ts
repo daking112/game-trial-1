@@ -1042,23 +1042,38 @@ function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], 
     parent = seg;
   }
 
-  // Tail fin.
+  /*
+   * Caudal fin.
+   *
+   * It has to run *along* the tail axis. The previous version faced the
+   * plate down the tangent, which stuck a dinner plate on the end of the
+   * tail -- at stage-2 body radius that read as a metre-wide yellow slab
+   * floating beside the coil. Two lobes: one vertical, one horizontal and
+   * shorter, so the fluke has depth from every angle.
+   */
   const last = out[out.length - 1];
   const tip = curve.getPointAt(1);
   const tan = curve.getTangentAt(1);
-  for (const roll of [0, Math.PI * 0.5]) {
+  const sideV = new THREE.Vector3().crossVectors(tan, UP).normalize();
+  const upV = new THREE.Vector3().crossVectors(sideV, tan).normalize();
+  const L = sr.radius * 2.5;
+  const W = sr.radius * 1.15;
+  for (const [normal, k] of [
+    [sideV, 1.0],
+    [upV, 0.58],
+  ] as Array<[THREE.Vector3, number]>) {
     const g = splinePlate(
       [
-        [0, 0],
-        [sr.radius * 1.5, sr.radius * 1.4],
-        [sr.radius * 0.9, sr.radius * 3.0],
-        [0, sr.radius * 2.2],
-        [-sr.radius * 0.9, sr.radius * 3.0],
-        [-sr.radius * 1.5, sr.radius * 1.4],
+        [0, -sr.radius * 0.55],
+        [W * k, L * 0.30],
+        [W * 0.72 * k, L * 0.88],
+        [0, L * 0.58],
+        [-W * 0.72 * k, L * 0.88],
+        [-W * k, L * 0.30],
       ],
-      sr.radius * 0.16,
+      sr.radius * 0.13,
     );
-    orientFwd(g, tip.clone().addScaledVector(tan, sr.radius * 0.2), tan, roll);
+    orientPlane(g, tip.clone().addScaledVector(tan, -sr.radius * 0.15), tan, normal);
     last.add('accent', g);
   }
 }
