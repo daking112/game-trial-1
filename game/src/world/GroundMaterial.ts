@@ -56,8 +56,8 @@ const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
 // Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
 // and rock as separate materials; they show one cool aggregate, and painting
 // them as if they did is what makes a far ridge read as a near one.
-const vec3 FAR_FOREST = vec3(0.128, 0.176, 0.118);
-const vec3 FAR_ROCK   = vec3(0.212, 0.224, 0.286);
+const vec3 FAR_FOREST = vec3(0.196, 0.244, 0.186);
+const vec3 FAR_ROCK   = vec3(0.268, 0.286, 0.352);
 `;
 
 export interface TerrainMaterialOptions {
@@ -257,9 +257,9 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           float depthBand = smoothstep(118.0, 360.0, ringR);
           farTone = mix(farTone * vec3(1.10, 1.06, 0.88),
                         farTone * vec3(0.86, 0.94, 1.22), depthBand);
-          // Not all the way: leaving a fifth of the local albedo means the key
+          // Not all the way: leaving a sixth of the local albedo means the key
           // still models the far peaks instead of flattening them to one value.
-          col = mix(col, farTone, farBlend * 0.80);
+          col = mix(col, farTone, farBlend * 0.84);
 
           col *= cloudShadow(vGw);
 

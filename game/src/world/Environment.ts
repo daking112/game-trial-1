@@ -160,7 +160,7 @@ export class Environment {
     // resolved to exactly the haze colour and no albedo or inscatter change
     // could reach them. Thinner fog lets the ranges keep some of their own
     // value and hue, which is what lets them separate from each other.
-    scene.fog = new THREE.FogExp2(0xffffff, 0.0072);
+    scene.fog = new THREE.FogExp2(0xffffff, 0.0088);
     scene.fog.color.copy(haze);
   }
 

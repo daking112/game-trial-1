@@ -448,9 +448,15 @@ export class Terrain {
     // Two octaves, not four. Four gives a dozen small crossings on the skyline
     // that stack up as torn paper; two gives two or three real ranges with
     // saddles between them, which is what actually reads as distance.
+    // Densifying the apron's far rings resolved the `fine` band that used to
+    // fall between samples, and the skyline promptly turned into the torn
+    // paper this comment warns about: a dozen small crossings at roughly one
+    // scale. Its weight comes down and its power goes up, so it now only puts
+    // spurs on the shoulders of the coarse masses instead of competing with
+    // them for the skyline.
     const coarse = ridged2(x * 0.0052, z * 0.0052, this.seed + 301, 2);
     const fine = ridged2(x * 0.0150, z * 0.0150, this.seed + 617, 2);
-    const peaks = Math.pow(coarse, 1.8) * 0.85 + Math.pow(fine, 2.4) * 0.15;
+    const peaks = Math.pow(coarse, 1.65) * 0.92 + Math.pow(fine, 3.2) * 0.08;
 
     // Sized against the play camera: from 22 units up, the tallest crest lands
     // about two degrees above the horizon. Any bigger and the range stops being
