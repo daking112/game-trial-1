@@ -313,11 +313,23 @@ export class Terrain {
 
     // (scale, how circular). The last ring sits at half * 6.6 -- comfortably
     // inside both the sky dome and the camera's far plane.
+    //
+    // The near rings are dense on purpose. The old list stepped 1.06, 1.16,
+    // 1.32, 1.58, 1.95 -- five rings covering r = 42 to 78, so the radial
+    // sample spacing across the first band of land beyond the rim was 6 to 15
+    // units. Any relief with a wavelength under about 30 units simply could not
+    // be represented there, and the result was the flaw that survived four
+    // rounds of colour work: a smooth, featureless sage wash between the map
+    // rim and the first real hill, spanning a quarter of the overview frame.
+    // No albedo change can fix missing geometry. Spacing in that band is now
+    // 2 to 8 units, which is what lets `distantRelief`'s foothill layer show up
+    // at all. Rings stay coarse past r = 120, where a ridge is a few pixels.
     const rings: Array<[number, number]> = [
-      [1.00, 0.00], [1.06, 0.00], [1.16, 0.12], [1.32, 0.38],
-      [1.58, 0.68], [1.95, 0.88], [2.45, 1.00], [3.05, 1.00],
-      [3.70, 1.00], [4.35, 1.00], [5.05, 1.00], [5.75, 1.00],
-      [6.20, 1.00], [6.60, 1.00],
+      [1.00, 0.00], [1.05, 0.00], [1.12, 0.04], [1.20, 0.10],
+      [1.30, 0.18], [1.42, 0.28], [1.56, 0.40], [1.72, 0.52],
+      [1.90, 0.64], [2.10, 0.76], [2.35, 0.86], [2.65, 0.94],
+      [3.00, 1.00], [3.45, 1.00], [4.00, 1.00], [4.65, 1.00],
+      [5.35, 1.00], [6.00, 1.00], [6.60, 1.00],
     ];
 
     // Border of the plane, walked once in order.
@@ -405,7 +417,7 @@ export class Terrain {
   private distantRelief(x: number, z: number): number {
     const half = this.size * 0.5;
     const r = Math.hypot(x, z);
-    const t = Math.pow(smoothstep(half * 1.10, half * 2.60, r), 1.2);
+    const t = Math.pow(smoothstep(half * 1.06, half * 2.20, r), 1.05);
     if (t <= 0) return 0;
 
     // The floor genuinely falls away. Without this the middle distance is a
@@ -417,10 +429,19 @@ export class Terrain {
     // smooth empty wash covering about a quarter of the overview frame; a
     // second layer of green ridges at roughly rim height is what turns "map,
     // then nothing, then mountains" into a landscape that recedes in steps.
-    const hillBand = smoothstep(half * 1.0, half * 1.8, r)
+    //
+    // Two frequencies, and both far higher than the single 0.0175 band this
+    // used to carry. At 0.0175 the ridge wavelength is about 57 units, so
+    // across the 45-to-130 band the player actually looks at there was room
+    // for barely one crest -- which is why that band read as a wash no matter
+    // what colour it was painted. 0.031 gives roughly three crests over the
+    // same span and 0.068 breaks each of those into spurs, so the near band
+    // has silhouette events at the scale the eye is looking for.
+    const hillBand = smoothstep(half * 1.04, half * 1.42, r)
                    * (1 - smoothstep(half * 3.2, half * 5.0, r));
-    const hills = ridged2(x * 0.0175, z * 0.0175, this.seed + 707, 3);
-    h += hillBand * (2.0 + 26.0 * Math.pow(hills, 1.5));
+    const hills = ridged2(x * 0.031, z * 0.031, this.seed + 707, 3);
+    const spurs = ridged2(x * 0.068, z * 0.068, this.seed + 711, 2);
+    h += hillBand * (1.5 + 21.0 * Math.pow(hills, 1.5) + 8.0 * Math.pow(spurs, 2.2));
 
     const mtn = Math.pow(smoothstep(half * 2.2, half * 5.0, r), 1.15);
 
