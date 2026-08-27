@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createSky, type SkyHandle } from './Sky';
 import { configureAerialPerspective } from './AerialPerspective';
+import { configureCloudShadow } from './CloudShadow';
 
 export interface EnvironmentOptions {
   /** Sun azimuth/elevation in degrees. Overrides the art-directed default. */
@@ -94,6 +95,16 @@ export class Environment {
     this.sky = this.skyHandle.mesh;
     this.group.add(this.sky);
 
+    // Ground materials compile the cloud-shadow field in as constants, so the
+    // rig has to be published before the first of them is built.
+    configureCloudShadow({
+      sunDir: this.sunDir,
+      deckY: 90,
+      scale: 0.0165,
+      cover: 0.505,
+      strength: 0.19,
+    });
+
     /* ------------------------------------------------------------ lights */
     this.sun = new THREE.DirectionalLight(ART.keyColor, ART.keyIntensity);
     this.sun.position.copy(this.sunDir).multiplyScalar(130);
@@ -139,9 +150,9 @@ export class Environment {
       inscatterStrength: 0.85,
       // The whole playfield is inside this, so nothing that matters for
       // gameplay picks up haze at all.
-      nearClear: 16,
+      nearClear: 22,
     });
-    scene.fog = new THREE.FogExp2(0xffffff, 0.0102);
+    scene.fog = new THREE.FogExp2(0xffffff, 0.0118);
     scene.fog.color.copy(haze);
   }
 

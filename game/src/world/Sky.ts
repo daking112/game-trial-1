@@ -161,8 +161,8 @@ void main() {
   vec3 cloudCol = mix(cloudDark, cloudLit, lit);
   // Silver lining: thin edges near the sun transmit rather than reflect.
   float edge = cover * (1.0 - cover) * 4.0;
-  cloudCol += sunColor * edge * pow(sunAmt, 2.0) * 0.85;
-  cloudCol += sunColor * pow(sunAmt, 5.0) * lit * 0.10;
+  cloudCol += sunColor * edge * pow(sunAmt, 3.0) * 0.42;
+  cloudCol += sunColor * pow(sunAmt, 5.0) * lit * 0.07;
 
   // Fade the deck out into the horizon haze: at grazing angles the projection
   // is running to hundreds of UV units per pixel and would alias to static.

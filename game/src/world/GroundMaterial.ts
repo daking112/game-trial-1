@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GROUND_GLSL } from './GroundNoise';
+import { cloudShadowSource, cloudShadowKey } from './CloudShadow';
 
 /**
  * Ground shading.
@@ -50,8 +51,8 @@ const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
 // Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
 // and rock as separate materials; they show one cool aggregate, and painting
 // them as if they did is what makes a far ridge read as a near one.
-const vec3 FAR_FOREST = vec3(0.062, 0.094, 0.062);
-const vec3 FAR_ROCK   = vec3(0.150, 0.156, 0.172);
+const vec3 FAR_FOREST = vec3(0.074, 0.104, 0.082);
+const vec3 FAR_ROCK   = vec3(0.196, 0.212, 0.248);
 `;
 
 export interface TerrainMaterialOptions {
@@ -111,6 +112,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
         #include <common>
         ${GROUND_GLSL}
         ${GROUND_PALETTE_GLSL}
+        ${cloudShadowSource()}
         varying vec3 vGw;
         varying vec3 vGn;
         varying float vGRoad;
@@ -233,9 +235,13 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // Collapse to mass tone with distance. Without this the apron's
           // ridgelines carry the same grass/rock mottling as the ground under
           // the player's feet, and the eye reads them as nearby hillocks.
-          float farBlend = smoothstep(90.0, 250.0, viewDist);
+          float farBlend = smoothstep(105.0, 265.0, viewDist);
           vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
-          col = mix(col, farTone, farBlend * 0.92);
+          // Not all the way: leaving a fifth of the local albedo means the key
+          // still models the far peaks instead of flattening them to one value.
+          col = mix(col, farTone, farBlend * 0.80);
+
+          col *= cloudShadow(vGw);
 
           diffuseColor.rgb *= col;
 
@@ -259,7 +265,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
       );
   };
 
-  mat.customProgramCacheKey = () => `terrain-ground-${roadInner}-${roadOuter}`;
+  mat.customProgramCacheKey = () => `terrain-ground-${roadInner}-${roadOuter}-${cloudShadowKey()}`;
   return mat;
 }
 
@@ -320,6 +326,7 @@ export function createRoadMaterial(opts: RoadMaterialOptions = {}): THREE.MeshSt
         #include <common>
         ${GROUND_GLSL}
         ${GROUND_PALETTE_GLSL}
+        ${cloudShadowSource()}
         varying vec3 vRw;
         varying vec2 vRuv;
         varying vec3 vRn;
@@ -406,6 +413,8 @@ export function createRoadMaterial(opts: RoadMaterialOptions = {}): THREE.MeshSt
           gRoadN = normalize(normalize(vRn)
                  + vec3(-(bx - b0) / e, 0.0, -(bz - b0) / e) * 0.45 * mix(0.3, 1.0, lodMid));
 
+          base *= cloudShadow(vRw);
+
           diffuseColor.rgb *= base;
           diffuseColor.a *= clamp(alpha, 0.0, 1.0);
           gRoadRough = mix(0.99, 0.84, rut) - cobMask * 0.10;
@@ -428,6 +437,6 @@ export function createRoadMaterial(opts: RoadMaterialOptions = {}): THREE.MeshSt
       );
   };
 
-  mat.customProgramCacheKey = () => `road-ground-${halfWidth}`;
+  mat.customProgramCacheKey = () => `road-ground-${halfWidth}-${cloudShadowKey()}`;
   return mat;
 }

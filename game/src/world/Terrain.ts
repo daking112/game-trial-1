@@ -411,12 +411,18 @@ export class Terrain {
     // The floor genuinely falls away. Without this the middle distance is a
     // shelf at map level and the eye reads it as more playfield rather than as
     // a valley the map sits above.
-    let h = -16.0 * t;
+    let h = -12.0 * t;
 
-    // Foothills: enough incident to stop the band between the map edge and the
-    // mountains from being an empty gradient, small enough not to compete.
-    const mtn = Math.pow(smoothstep(half * 1.9, half * 4.6, r), 1.1);
-    h += (fbm2(x * 0.018, z * 0.018, this.seed + 707, 3) - 0.5) * 11.0 * t * (1 - mtn);
+    // Forested foothills. The band between the map rim and the far range was a
+    // smooth empty wash covering about a quarter of the overview frame; a
+    // second layer of green ridges at roughly rim height is what turns "map,
+    // then nothing, then mountains" into a landscape that recedes in steps.
+    const hillBand = smoothstep(half * 1.0, half * 1.8, r)
+                   * (1 - smoothstep(half * 3.2, half * 5.0, r));
+    const hills = ridged2(x * 0.0175, z * 0.0175, this.seed + 707, 3);
+    h += hillBand * (2.0 + 26.0 * Math.pow(hills, 1.5));
+
+    const mtn = Math.pow(smoothstep(half * 2.2, half * 5.0, r), 1.15);
 
     // Two octaves, not four. Four gives a dozen small crossings on the skyline
     // that stack up as torn paper; two gives two or three real ranges with
@@ -425,7 +431,10 @@ export class Terrain {
     const fine = ridged2(x * 0.0150, z * 0.0150, this.seed + 617, 2);
     const peaks = Math.pow(coarse, 1.8) * 0.85 + Math.pow(fine, 2.4) * 0.15;
 
-    return h + mtn * 85.0 * peaks;
+    // Sized against the play camera: from 22 units up, the tallest crest lands
+    // about two degrees above the horizon. Any bigger and the range stops being
+    // a backdrop and starts being the subject of the shot.
+    return h + mtn * 54.0 * peaks;
   }
 
   /* --------------------------------------------------------------- sampling */
