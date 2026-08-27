@@ -1,1 +1,1 @@
-{"root":["./src/main.ts","./src/core/Debug.ts","./src/core/Engine.ts","./src/core/GradePass.ts","./src/core/Textures.ts","./src/world/Environment.ts","./src/world/Terrain.ts","./src/world/Track.ts"],"version":"5.9.3"}
+{"root":["./src/main.ts","./src/combat/Battle.ts","./src/combat/Enemy.ts","./src/combat/Projectile.ts","./src/combat/Waves.ts","./src/core/Debug.ts","./src/core/Engine.ts","./src/core/GradePass.ts","./src/core/Textures.ts","./src/world/Environment.ts","./src/world/Terrain.ts","./src/world/Track.ts"],"version":"5.9.3"}
