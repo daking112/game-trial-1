@@ -14,7 +14,7 @@ import { SPECIES, SPECIES_ORDER } from './creatures/species';
 import { Particles } from './fx/Particles';
 import { Feel, FloatingText } from './fx/Feel';
 import { GameAudio } from './audio/Audio';
-import { Collection, statMultipliers } from './meta/Progression';
+import { Collection, statMultipliers, EVOLUTION_LEVEL, evolutionBonus } from './meta/Progression';
 import { CollectionPanel } from './ui/CollectionPanel';
 import { TowerPanel } from './ui/TowerPanel';
 
@@ -127,7 +127,7 @@ const battle = new Battle(track, {
 
     // Split the kill's XP across every creature that could have contributed,
     // so support placements still progress rather than only the last shooter.
-    const xp = Math.max(1, Math.round(a.maxHealth * 0.35));
+    const xp = Math.max(1, Math.round(a.maxHealth * 0.5));
     for (const t of battle.towers) {
       const id = (t.visual as { speciesId?: string }).speciesId;
       if (!id) continue;
@@ -139,6 +139,10 @@ const battle = new Battle(track, {
         hud.banner(`${r?.name ?? id} reached Lv.${newLevel}`, 'good', 1.8);
         floaters.spawn(t.position, `Lv.${newLevel}`, r?.accent ?? '#fff', 1.3);
       }
+      // Checked every kill, not only on the level-up frame: a creature
+      // carried in above the threshold from a previous run would otherwise
+      // never evolve at all.
+      evolveIfPossible(t);
     }
   },
 
@@ -277,6 +281,8 @@ container.addEventListener('pointerup', (e) => {
   collection.markCaught(spec.id);
   audio.place();
   hud.select(null);
+  // A creature carried in above the threshold evolves the moment it lands.
+  evolveIfPossible(battle.towers[battle.towers.length - 1]);
 });
 
 // --- HUD ------------------------------------------------------------------
@@ -324,6 +330,54 @@ const towerPanel = new TowerPanel(hudHost, {
   },
   onClose: () => { towerPanel.hide(); selectRing.visible = false; },
 });
+
+/**
+ * Swap a tower's creature for its evolved form in place.
+ *
+ * The Tower keeps its identity -- position, tier and invested scrap all carry
+ * over -- because an evolution that reset the player's upgrades would read as
+ * a punishment for succeeding.
+ */
+function evolveIfPossible(t: Tower) {
+  const vis = t.visual as { speciesId?: string; creature?: Creature };
+  const id = vis.speciesId;
+  if (!id) return;
+  const next = SPECIES[id]?.evolvesTo;
+  if (!next || !SPECIES[next]) return;
+  if ((collection.get(id)?.level ?? 1) < EVOLUTION_LEVEL) return;
+
+  const evolved = creatureTower(next);
+  evolved.group.position.copy(t.visual.group.position);
+  evolved.group.rotation.copy(t.visual.group.rotation);
+  evolved.group.scale.copy(t.visual.group.scale);
+
+  battle.group.remove(t.visual.group);
+  vis.creature?.dispose();
+
+  // Rebind the tower to the new visual. Stats take the evolved species' base
+  // plus a bonus, then re-apply the tiers already bought.
+  (t as unknown as { visual: TowerVisual }).visual = evolved;
+  battle.group.add(evolved.group);
+
+  const sp = SPECIES[next];
+  const bonus = evolutionBonus();
+  const tierMult = 1.42 ** (t.tier - 1);
+  t.stats.damage = sp.stats.damage * bonus.damage * tierMult;
+  t.stats.range = sp.stats.range * bonus.range * 1.1 ** (t.tier - 1);
+  t.stats.rate = sp.stats.attackSpeed * bonus.rate * 1.16 ** (t.tier - 1);
+  t.stats.projectile.damage = t.stats.damage;
+  t.stats.projectile.color = sp.palette.glow;
+
+  collection.markCaught(next);
+  hud.banner(`${SPECIES[id].name} evolved into ${sp.name}!`, 'good', 3.0);
+  floaters.spawn(t.position, sp.name, sp.palette.accent, 1.8);
+  particles.burst(t.position.clone().setY(t.position.y + 0.8), {
+    count: 54, color: sp.palette.glow, speed: [2, 9],
+    life: [0.4, 0.95], size: 11, gravity: -1.5,
+  });
+  feel.shake(0.22);
+  audio.fanfare(true);
+}
 
 function towerName(t: Tower): string {
   const id = (t.visual as { speciesId?: string }).speciesId;
@@ -383,6 +437,7 @@ engine.start();
 
 (window as unknown as { __battle: Battle; __codex: CollectionPanel }).__battle = battle;
 (window as unknown as { __codex: CollectionPanel }).__codex = codex;
+(window as unknown as { __collection: Collection }).__collection = collection;
 
 // Test hook: select the first placed tower so the inspector can be captured.
 (window as unknown as { __selectFirstTower: () => void }).__selectFirstTower = () => {

@@ -59,10 +59,26 @@ export function statMultipliers(level: number) {
   };
 }
 
+/**
+ * Level at which a stage-1 creature evolves.
+ *
+ * Low enough to be reached inside a single run, because an evolution the
+ * player never sees is a mechanic that does not exist. Level 4 costs 734 XP,
+ * which a creature holding a lane clears around wave 6-7; level 6 needed
+ * 2320 and was never reached in a full playthrough. Carried levels mean later
+ * runs hit it sooner.
+ */
+export const EVOLUTION_LEVEL = 4;
+
 export interface EvolutionRule {
   /** Species this evolves into. */
   into: string;
   atLevel: number;
+}
+
+/** Bonus applied on evolution, on top of the stage-2 species' base stats. */
+export function evolutionBonus() {
+  return { damage: 1.15, range: 1.05, rate: 1.05 };
 }
 
 const STORAGE_KEY = 'gearwood.collection.v1';
