@@ -9,7 +9,7 @@
  */
 import { chromium } from 'playwright';
 
-const url = process.argv[2] || 'http://127.0.0.1:5173';
+const url = (process.argv[2] || 'http://127.0.0.1:5173') + '?demo=1';
 const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],

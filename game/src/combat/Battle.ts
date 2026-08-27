@@ -95,7 +95,7 @@ export class Battle {
 
   phase: BattlePhase = 'idle';
   lives = 40;
-  gold = 120;
+  gold = 300;
   waveIndex = 0;
 
   private schedule: ScheduledSpawn[] = [];

@@ -88,7 +88,7 @@ for (const ev of ['pointerdown', 'keydown'] as const) {
   window.addEventListener(ev, () => audio.resume(), { once: true });
 }
 
-const startingGold = 120;
+const startingGold = 300;
 const endScreen = new EndScreen(hudHost, () => window.location.reload());
 
 const particles = new Particles();
@@ -481,26 +481,30 @@ engine.onUpdate((dt, elapsed) => {
   );
 });
 
-// Seed a few towers and open a wave so the game shows live combat on load
-// rather than an empty field.
-const seedIds = ROSTER.map((r) => r.id);
-const seedSpots2 = [
-  new THREE.Vector3(-14, 0, -6),
-  new THREE.Vector3(6, 0, 2),
-  new THREE.Vector3(-4, 0, -14),
-];
-for (let i = 0; i < seedSpots2.length; i++) {
-  const spot = seedSpots2[i];
-  spot.y = terrain.heightAt(spot.x, spot.z);
-  const visual = creatureTower(seedIds[i % seedIds.length]);
-  visual.group.position.copy(spot);
-  const sp = SPECIES[visual.speciesId];
-  battle.addTower(new Tower(visual, {
-    damage: sp.stats.damage, range: sp.stats.range, rate: sp.stats.attackSpeed,
-    projectile: { speed: 26, damage: sp.stats.damage, color: sp.palette.glow },
-  }, spot.clone(), sp.stats.cost));
+// Demo mode (?demo=1) seeds towers and opens a wave mid-fight so the
+// screenshot harness and the headless simulation have live combat to look at.
+// A real player must always get a clean board and press Start Wave themselves.
+const DEMO = new URLSearchParams(location.search).has('demo');
+if (DEMO) {
+  const seedIds = ROSTER.map((r) => r.id);
+  const seedSpots = [
+    new THREE.Vector3(-14, 0, -6),
+    new THREE.Vector3(6, 0, 2),
+    new THREE.Vector3(-4, 0, -14),
+  ];
+  for (let i = 0; i < seedSpots.length; i++) {
+    const spot = seedSpots[i];
+    spot.y = terrain.heightAt(spot.x, spot.z);
+    const visual = creatureTower(seedIds[i % seedIds.length]);
+    visual.group.position.copy(spot);
+    const sp = SPECIES[visual.speciesId];
+    battle.addTower(new Tower(visual, {
+      damage: sp.stats.damage, range: sp.stats.range, rate: sp.stats.attackSpeed,
+      projectile: { speed: 26, damage: sp.stats.damage, color: sp.palette.glow },
+    }, spot.clone(), sp.stats.cost));
+  }
+  battle.startWave(4);
 }
-battle.startWave(4);
 
 engine.start();
 

@@ -10,7 +10,7 @@
 import { chromium } from 'playwright';
 
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const url = process.argv[2] || 'http://127.0.0.1:5173';
+const url = (process.argv[2] || 'http://127.0.0.1:5173') + '?demo=1';
 
 const browser = await chromium.launch({
   executablePath: CHROME,

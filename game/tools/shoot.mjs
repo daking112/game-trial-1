@@ -47,7 +47,11 @@ export const SHOTS = {
                before: 'window.__forceEnd && window.__forceEnd(false)' },
 };
 
-const url = args.url || 'http://127.0.0.1:5173';
+let url = args.url || 'http://127.0.0.1:5173';
+// The game boots to a clean board; the harness wants live combat to shoot.
+if (!url.includes('demo') && !url.includes('showcase')) {
+  url += (url.includes('?') ? '&' : '?') + 'demo=1';
+}
 const outDir = resolve(args.out || 'shots');
 const width = Number(args.width || 1600);
 const height = Number(args.height || 900);
