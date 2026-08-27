@@ -138,7 +138,7 @@ export class Environment {
 
     /* -------------------------------------------------------- atmosphere */
     const haze = configureAerialPerspective({
-      haze: '#cfe0e8',
+      haze: '#aec7ea',
       inscatter: '#ffe3b4',
       zenith: '#a8cfec',
       groundY: -1.0,

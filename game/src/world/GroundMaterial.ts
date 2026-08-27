@@ -56,8 +56,8 @@ const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
 // Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
 // and rock as separate materials; they show one cool aggregate, and painting
 // them as if they did is what makes a far ridge read as a near one.
-const vec3 FAR_FOREST = vec3(0.074, 0.104, 0.082);
-const vec3 FAR_ROCK   = vec3(0.196, 0.212, 0.248);
+const vec3 FAR_FOREST = vec3(0.128, 0.176, 0.118);
+const vec3 FAR_ROCK   = vec3(0.212, 0.224, 0.286);
 `;
 
 export interface TerrainMaterialOptions {
@@ -240,7 +240,13 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // Collapse to mass tone with distance. Without this the apron's
           // ridgelines carry the same grass/rock mottling as the ground under
           // the player's feet, and the eye reads them as nearby hillocks.
-          float farBlend = smoothstep(105.0, 265.0, viewDist);
+          // Keyed off *world radius*, not view distance. View distance makes the
+          // far corner of the playfield collapse to mass tone the moment the
+          // camera pulls back, which costs track readability for nothing. The
+          // playfield's furthest corner is at r = 56.6, so starting at 58
+          // excludes it by construction from every camera.
+          float ringR = length(vGw.xz);
+          float farBlend = smoothstep(58.0, 132.0, ringR);
           vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
 
           // Separate the ranges by hue, not only by value. Four ridges sharing
@@ -248,7 +254,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // as flat paper. Nearer land keeps a warm green cast; each range
           // further out is pushed cooler and bluer, so depth survives even
           // where two ridges happen to meet at the same luminance.
-          float depthBand = smoothstep(110.0, 320.0, viewDist);
+          float depthBand = smoothstep(118.0, 360.0, ringR);
           farTone = mix(farTone * vec3(1.10, 1.06, 0.88),
                         farTone * vec3(0.86, 0.94, 1.22), depthBand);
           // Not all the way: leaving a fifth of the local albedo means the key
