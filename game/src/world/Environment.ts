@@ -85,7 +85,7 @@ export class Environment {
       midColor: '#8ac6ee',
       horizonColor: '#cfe4f1',
       horizonWarm: '#f7e2b2',
-      groundColor: '#b9bea4',
+      groundColor: '#a9bdd6',
       sunColor: '#ffd9a2',
       cloudLit: '#fff8ec',
       cloudDark: '#9db2cd',

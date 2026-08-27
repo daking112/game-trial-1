@@ -144,6 +144,10 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
         {
           vec2 w = vGw.xz;
           float viewDist = length(vGw - cameraPosition);
+          // Distance from the map's centre. Every "how far out of the playfield
+          // is this" decision keys off this rather than off view distance, so
+          // the same patch of ground is painted the same way from every camera.
+          float ringR = length(w);
 
           // Hand-rolled mip: fade each detail band back to its own mean as it
           // recedes, so nothing below a pixel is left to alias.
@@ -187,7 +191,15 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
 
           // Large dry/bare regions on the flats, so open ground is not one flat
           // green field.
+          //
+          // Confined to the playfield. The macro field that scatters these runs
+          // at a 32 m wavelength, so on the apron -- seen at a grazing angle,
+          // where 32 m of ground compresses into a few pixels of screen -- one
+          // region would cover the whole visible band and paint it a single flat
+          // khaki. A texture idea that works underfoot is not automatically one
+          // that works at two hundred metres.
           float bareM = smoothstep(0.62, 0.82, macro * 0.72 + meso * 0.28);
+          bareM *= 1.0 - smoothstep(46.0, 74.0, ringR);
 
           float dirtM = clamp(max(max(scree, roadCore), max(bareM * 0.55, roadScuff * 0.45)), 0.0, 1.0);
 
@@ -242,11 +254,13 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // the player's feet, and the eye reads them as nearby hillocks.
           // Keyed off *world radius*, not view distance. View distance makes the
           // far corner of the playfield collapse to mass tone the moment the
-          // camera pulls back, which costs track readability for nothing. The
-          // playfield's furthest corner is at r = 56.6, so starting at 58
-          // excludes it by construction from every camera.
-          float ringR = length(vGw.xz);
-          float farBlend = smoothstep(58.0, 132.0, ringR);
+          // camera pulls back, which costs track readability for nothing.
+          //
+          // The playfield is 90 units across, so its furthest corner sits at
+          // r = 63.6. Starting the ramp at 56 puts that corner at 0.03 -- below
+          // the threshold of anything, from every camera -- while still catching
+          // the first band of apron, which now stands high enough to be seen.
+          float farBlend = smoothstep(56.0, 130.0, ringR);
           vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
 
           // Separate the ranges by hue, not only by value. Four ridges sharing

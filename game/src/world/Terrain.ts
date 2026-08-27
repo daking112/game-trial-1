@@ -380,6 +380,19 @@ export class Terrain {
       }
     }
 
+    // Winding matters, and it was wrong for as long as the apron has existed.
+    //
+    // The border loop runs counter-clockwise in the (x, z) plane, which is
+    // *clockwise* seen from above, and the rings run outward. With that
+    // orientation the triangle (a, c, b) has (c-a) x (b-a) pointing at -Y: every
+    // triangle in the distant landscape faced down. `computeVertexNormals` duly
+    // gave the whole apron downward normals, so it was lit from underneath --
+    // which is the actual reason the ranges read as flat, unlit grey cardboard
+    // no matter what was done to their albedo -- and front-face culling threw
+    // away every slope that faced the camera, leaving the sky dome's
+    // below-horizon colour showing through as a smooth pale band above the map
+    // rim. Both of those survived several rounds of colour work because neither
+    // was a colour problem.
     for (let r = 0; r < ringCount - 1; r++) {
       for (let i = 0; i < loopCount; i++) {
         const j = (i + 1) % loopCount;
@@ -387,7 +400,7 @@ export class Terrain {
         const b = r * loopCount + j;
         const c = (r + 1) * loopCount + i;
         const d = (r + 1) * loopCount + j;
-        idx.push(a, c, b, b, c, d);
+        idx.push(a, b, c, b, d, c);
       }
     }
 
@@ -420,10 +433,22 @@ export class Terrain {
     const t = Math.pow(smoothstep(half * 1.06, half * 2.20, r), 1.05);
     if (t <= 0) return 0;
 
-    // The floor genuinely falls away. Without this the middle distance is a
-    // shelf at map level and the eye reads it as more playfield rather than as
-    // a valley the map sits above.
-    let h = -12.0 * t;
+    // The floor falls away, but nothing like as fast as it used to.
+    //
+    // A flat -12 * t put every square metre of land between the map rim and the
+    // first mountain *below the camera's sightline over its own rim*. From the
+    // play camera at y = 22, the ray that just clears a 9-unit rim at r = 45 is
+    // down to y = 1.6 by r = 100, and the old apron sat around y = -7 there. So
+    // the eye looked straight over the rim into a hole, and what filled the hole
+    // was the sky dome's below-horizon colour: a smooth, eventless, pale sage
+    // wedge across a quarter of the frame. That band survived four rounds of
+    // albedo and haze work for the obvious reason -- it was never terrain, and
+    // no terrain shader change could reach it.
+    //
+    // The near band now drops only 4.5, which is still plainly a step down from
+    // the playfield, and the remaining depth is spent further out where it buys
+    // recession instead of a void.
+    let h = -4.5 * t - 8.0 * Math.pow(smoothstep(half * 2.4, half * 5.0, r), 1.2);
 
     // Forested foothills. The band between the map rim and the far range was a
     // smooth empty wash covering about a quarter of the overview frame; a
@@ -441,7 +466,10 @@ export class Terrain {
                    * (1 - smoothstep(half * 3.2, half * 5.0, r));
     const hills = ridged2(x * 0.031, z * 0.031, this.seed + 707, 3);
     const spurs = ridged2(x * 0.068, z * 0.068, this.seed + 711, 2);
-    h += hillBand * (1.5 + 21.0 * Math.pow(hills, 1.5) + 8.0 * Math.pow(spurs, 2.2));
+    // The constant term matters as much as the noise: it is what guarantees the
+    // band clears the rim's sightline everywhere, so the recession never breaks
+    // open into sky-dome again in a saddle where the noise happens to be low.
+    h += hillBand * (6.5 + 23.0 * Math.pow(hills, 1.4) + 9.0 * Math.pow(spurs, 2.2));
 
     const mtn = Math.pow(smoothstep(half * 2.2, half * 5.0, r), 1.15);
 
