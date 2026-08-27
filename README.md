@@ -29,6 +29,9 @@ Then open the printed `http://127.0.0.1:5173` URL.
 | `C` | Field Codex |
 | `Esc` | Cancel placement |
 
+On touch: one finger orbits, two fingers pinch to zoom and drag to pan, tap to
+place or select. The HUD reflows to a scrolling roster strip on narrow screens.
+
 Creatures cannot be placed on the track. Enemies that reach the end cost you
 lives; stronger tiers split into weaker ones when destroyed, so a late kill can
 still flood the lane.
