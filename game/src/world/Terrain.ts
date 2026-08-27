@@ -171,12 +171,36 @@ export class Terrain {
     const rz = Math.abs(z) / half;
     const r = Math.pow(rx * rx * rx * rx + rz * rz * rz * rz, 0.25);
     const rWobble = (fbm2(x * 0.05, z * 0.05, s + 77, 3) - 0.5) * 0.20;
-    const ridge = ridged2(x * 0.042, z * 0.042, s + 53, 4);
     const rim = smoothstep(0.76, 1.06, r + rWobble);
 
-    h += rim * (2.4 + 6.2 * ridge);
+    h += rim * this.rimProfile(x, z);
 
     return h;
+  }
+
+  /**
+   * How high the framing rim stands at this bearing.
+   *
+   * The old rim was a ridged-noise band of near-constant amplitude, which from
+   * the play camera reads as one continuous lip: a horizon line with no events
+   * on it. Multiplying by a *bearing*-dependent lobe — noise sampled on the unit
+   * direction, so it is periodic by construction and has no seam at +/-pi —
+   * turns that lip into headlands and saddles. The skyline then has somewhere
+   * for the eye to rest, and the sun can rake across a peak and leave the notch
+   * beside it in shade.
+   *
+   * Shared with the road saddle so a taller rim is cut down by exactly as much
+   * as it was raised; otherwise the path walks into a wall wherever the lobe
+   * happens to peak.
+   */
+  private rimProfile(x: number, z: number): number {
+    const s = this.seed;
+    const r = Math.hypot(x, z) + 1e-6;
+    const ux = x / r;
+    const uz = z / r;
+    const lobe = fbm2(ux * 2.7 + 11.0, uz * 2.7 - 4.0, s + 404, 3);
+    const ridge = ridged2(x * 0.042, z * 0.042, s + 53, 4);
+    return (1.3 + 7.4 * ridge) * (0.45 + 1.15 * lobe);
   }
 
   /** Final height including the road cut. `d` is distance to the path. */
@@ -194,8 +218,7 @@ export class Terrain {
       const rz = Math.abs(z) / half;
       const r = Math.pow(rx * rx * rx * rx + rz * rz * rz * rz, 0.25);
       const rim = smoothstep(0.70, 1.04, r);
-      const ridge = ridged2(x * 0.042, z * 0.042, this.seed + 53, 4);
-      h -= rim * (2.2 + 5.6 * ridge) * saddle * 0.88;
+      h -= rim * this.rimProfile(x, z) * saddle * 0.90;
     }
 
     // The corridor itself: level, with a shallow worn trough and spoil berms
@@ -268,14 +291,34 @@ export class Terrain {
   }
 
   /**
-   * Rings extruded outward from the exact border vertices of the playfield, so
-   * the seam is watertight by construction. Ring spacing grows geometrically:
-   * near rings need to hold the silhouette, far rings only need to fill fog.
+   * Land beyond the playfield, and the ridgelines on the horizon.
+   *
+   * Two things were wrong with extruding the square border outward by a scale
+   * factor. The corners of a square grow as sqrt(2) times its edges, so the far
+   * rings reached about 370 units while the sky dome stopped at 300: the four
+   * corners punched straight through it and rendered as dark wedges hanging in
+   * the sky. And a uniformly sinking apron has no skyline — the land just tips
+   * away and stops.
+   *
+   * This blends the ring cross-section from the playfield's square to a circle
+   * over the first few steps, so nothing ever sticks out further than the
+   * radius the dome was sized for, and it drives the far rings with
+   * `distantRelief` so the horizon is a range of peaks and saddles instead of a
+   * flat cut. Ring 0 still copies the playfield's own border heights exactly, so
+   * the seam is watertight by construction.
    */
   private buildApron(): THREE.BufferGeometry {
     const half = this.size * 0.5;
     const n = this.res;
-    const scales = [1.0, 1.07, 1.18, 1.38, 1.72, 2.3, 3.3, 4.8, 6.6];
+
+    // (scale, how circular). The last ring sits at half * 6.6 -- comfortably
+    // inside both the sky dome and the camera's far plane.
+    const rings: Array<[number, number]> = [
+      [1.00, 0.00], [1.06, 0.00], [1.16, 0.12], [1.32, 0.38],
+      [1.58, 0.68], [1.95, 0.88], [2.45, 1.00], [3.05, 1.00],
+      [3.70, 1.00], [4.35, 1.00], [5.05, 1.00], [5.75, 1.00],
+      [6.20, 1.00], [6.60, 1.00],
+    ];
 
     // Border of the plane, walked once in order.
     const border: Array<[number, number]> = [];
@@ -284,34 +327,40 @@ export class Terrain {
     for (let i = n - 1; i > 0; i--) border.push([-half + (i / (n - 1)) * this.size, half]);
     for (let i = n - 1; i > 0; i--) border.push([-half, -half + (i / (n - 1)) * this.size]);
 
-    // Decimate: the apron does not need playfield resolution.
-    const stride = Math.max(1, Math.floor((n - 1) / 40));
+    // Decimate: the apron does not need playfield resolution, but it does need
+    // enough angular samples that a distant ridge is not a polygon.
+    const stride = Math.max(1, Math.floor((n - 1) / 48));
     const loop: Array<[number, number]> = [];
     for (let i = 0; i < border.length; i += stride) loop.push(border[i]);
 
-    const ringCount = scales.length;
+    const ringCount = rings.length;
     const loopCount = loop.length;
     const pos: number[] = [];
     const idx: number[] = [];
     const roadAttr: number[] = [];
     const occAttr: number[] = [];
+    // Mean radius of the square border; the circle the rings relax onto.
+    const circleR = half * 1.17;
 
     for (let r = 0; r < ringCount; r++) {
-      const k = scales[r];
+      const [k, circ] = rings[r];
       for (let i = 0; i < loopCount; i++) {
         const bx = loop[i][0];
         const bz = loop[i][1];
-        const x = bx * k;
-        const z = bz * k;
+        const len = Math.hypot(bx, bz) || 1;
+        const ux = bx / len;
+        const uz = bz / len;
+        // Break the circle so the far horizon is not a drawn compass arc.
+        const wob = 1 + (fbm2(ux * 3.1 + 5.0, uz * 3.1 - 2.0, this.seed + 913, 3) - 0.5) * 0.34 * circ;
+        const x = THREE.MathUtils.lerp(bx, ux * circleR * wob, circ) * k;
+        const z = THREE.MathUtils.lerp(bz, uz * circleR * wob, circ) * k;
+
         let h: number;
         if (r === 0) {
           // Exactly the playfield's own height so the seam does not crack.
           h = this.sampleHeight(x, z, this.pathDistance(x, z));
         } else {
-          h = this.baseHeight(x, z);
-          // Let the far rings sink so the land reads as falling away, not as a
-          // wall ringing the map.
-          h -= (k - 1.0) * 1.4;
+          h = this.baseHeight(x, z) + this.distantRelief(x, z);
         }
         pos.push(x, h, z);
         roadAttr.push(1e6);
@@ -338,6 +387,54 @@ export class Terrain {
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
+  }
+
+  /**
+   * Height added to the land outside the playfield.
+   *
+   * Zero at the map edge and for some way past it, then a falling floor with
+   * ridged peaks rising out of it. The falling floor is what makes the middle
+   * distance read as *behind* rather than *beside*; the peaks are what the
+   * aerial-perspective haze needs in order to show itself, since haze on an
+   * empty horizon is just a lighter shade of nothing.
+   *
+   * Peak heights are chosen against the play camera: from 22 units up, a crest
+   * at 300 units out and 36 high subtends about three degrees, which puts it
+   * just below the top of frame — present, never looming.
+   */
+  private distantRelief(x: number, z: number): number {
+    const half = this.size * 0.5;
+    const r = Math.hypot(x, z);
+    const t = Math.pow(smoothstep(half * 1.10, half * 2.60, r), 1.2);
+    if (t <= 0) return 0;
+
+    // The floor genuinely falls away. Without this the middle distance is a
+    // shelf at map level and the eye reads it as more playfield rather than as
+    // a valley the map sits above.
+    let h = -12.0 * t;
+
+    // Forested foothills. The band between the map rim and the far range was a
+    // smooth empty wash covering about a quarter of the overview frame; a
+    // second layer of green ridges at roughly rim height is what turns "map,
+    // then nothing, then mountains" into a landscape that recedes in steps.
+    const hillBand = smoothstep(half * 1.0, half * 1.8, r)
+                   * (1 - smoothstep(half * 3.2, half * 5.0, r));
+    const hills = ridged2(x * 0.0175, z * 0.0175, this.seed + 707, 3);
+    h += hillBand * (2.0 + 26.0 * Math.pow(hills, 1.5));
+
+    const mtn = Math.pow(smoothstep(half * 2.2, half * 5.0, r), 1.15);
+
+    // Two octaves, not four. Four gives a dozen small crossings on the skyline
+    // that stack up as torn paper; two gives two or three real ranges with
+    // saddles between them, which is what actually reads as distance.
+    const coarse = ridged2(x * 0.0052, z * 0.0052, this.seed + 301, 2);
+    const fine = ridged2(x * 0.0150, z * 0.0150, this.seed + 617, 2);
+    const peaks = Math.pow(coarse, 1.8) * 0.85 + Math.pow(fine, 2.4) * 0.15;
+
+    // Sized against the play camera: from 22 units up, the tallest crest lands
+    // about two degrees above the horizon. Any bigger and the range stops being
+    // a backdrop and starts being the subject of the shot.
+    return h + mtn * 54.0 * peaks;
   }
 
   /* --------------------------------------------------------------- sampling */

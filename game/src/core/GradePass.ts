@@ -12,12 +12,15 @@ export const GradePass = {
     tDiffuse: { value: null as THREE.Texture | null },
     resolution: { value: new THREE.Vector2(1, 1) },
     time: { value: 0 },
-    vignette: { value: 1.05 },
-    saturation: { value: 1.12 },
-    contrast: { value: 1.06 },
-    aberration: { value: 0.0016 },
-    grain: { value: 0.022 },
+    vignette: { value: 0.86 },
+    saturation: { value: 1.14 },
+    contrast: { value: 1.04 },
+    aberration: { value: 0.0015 },
+    grain: { value: 0.020 },
     lift: { value: new THREE.Color(0.008, 0.012, 0.022) },
+    /** Tint pushed into the highlights; the shadows get its complement. */
+    splitWarm: { value: new THREE.Color(0.045, 0.020, -0.020) },
+    splitCool: { value: new THREE.Color(-0.014, 0.002, 0.036) },
   },
 
   vertexShader: /* glsl */ `
@@ -38,6 +41,8 @@ export const GradePass = {
     uniform float aberration;
     uniform float grain;
     uniform vec3  lift;
+    uniform vec3  splitWarm;
+    uniform vec3  splitCool;
     varying vec2 vUv;
 
     float hash(vec2 p) {
@@ -64,13 +69,22 @@ export const GradePass = {
       // Contrast around mid grey.
       col = (col - 0.5) * contrast + 0.5;
 
+      // Split tone. Warm into the highlights, cool into the shadows, weighted
+      // so the midtones are left alone. This is the cheapest way to get the
+      // warm-key/cool-fill separation to survive the tone mapper -- ACES
+      // compresses exactly the top end where that separation lives, and without
+      // putting some of it back the whole frame drifts toward one hue.
+      float sh = 1.0 - smoothstep(0.0, 0.45, luma);
+      float hi = smoothstep(0.42, 1.0, luma);
+      col += splitWarm * hi + splitCool * sh;
+
       // Lift the blacks slightly toward cool -- pure black reads as a hole.
       col += lift * (1.0 - luma);
 
       // Vignette. Note the edges are ordered low->high: GLSL smoothstep is
       // undefined when edge0 > edge1, so the falloff is inverted explicitly.
       float v = 1.0 - smoothstep(0.15, 0.85, r2 * vignette);
-      col *= mix(0.80, 1.0, v);
+      col *= mix(0.89, 1.0, v);
 
       // Animated grain, strongest in the shadows where banding shows up.
       float n = hash(uv * resolution + fract(time) * 137.0) - 0.5;

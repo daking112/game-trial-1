@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GROUND_GLSL } from './GroundNoise';
+import { cloudShadowSource, cloudShadowKey } from './CloudShadow';
 
 /**
  * Ground shading.
@@ -35,15 +36,23 @@ import { GROUND_GLSL } from './GroundNoise';
  * values clips to fluorescent mush through ACES.
  */
 export const GROUND_PALETTE_GLSL = /* glsl */ `
-const vec3 GRASS_DEEP = vec3(0.052, 0.079, 0.036);
-const vec3 GRASS_MID  = vec3(0.092, 0.132, 0.052);
-const vec3 GRASS_LIT  = vec3(0.150, 0.190, 0.076);
-const vec3 GRASS_DRY  = vec3(0.190, 0.172, 0.086);
-const vec3 DIRT_DARK  = vec3(0.055, 0.040, 0.027);
-const vec3 DIRT_MID   = vec3(0.108, 0.077, 0.049);
-const vec3 DIRT_LIT   = vec3(0.172, 0.132, 0.088);
+const vec3 GRASS_DEEP = vec3(0.046, 0.081, 0.033);
+const vec3 GRASS_MID  = vec3(0.086, 0.142, 0.049);
+const vec3 GRASS_LIT  = vec3(0.144, 0.212, 0.071);
+const vec3 GRASS_DRY  = vec3(0.202, 0.183, 0.084);
+// The road is a gameplay affordance before it is a surface: it has to read as a
+// separate, lighter, warmer band from any camera angle, so the dirt ramp sits
+// deliberately above the grass in value rather than beside it.
+const vec3 DIRT_DARK  = vec3(0.074, 0.053, 0.034);
+const vec3 DIRT_MID   = vec3(0.152, 0.112, 0.070);
+const vec3 DIRT_LIT   = vec3(0.248, 0.198, 0.134);
 const vec3 ROCK_DARK  = vec3(0.052, 0.052, 0.056);
 const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
+// Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
+// and rock as separate materials; they show one cool aggregate, and painting
+// them as if they did is what makes a far ridge read as a near one.
+const vec3 FAR_FOREST = vec3(0.074, 0.104, 0.082);
+const vec3 FAR_ROCK   = vec3(0.196, 0.212, 0.248);
 `;
 
 export interface TerrainMaterialOptions {
@@ -103,6 +112,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
         #include <common>
         ${GROUND_GLSL}
         ${GROUND_PALETTE_GLSL}
+        ${cloudShadowSource()}
         varying vec3 vGw;
         varying vec3 vGn;
         varying float vGRoad;
@@ -207,6 +217,32 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // ambient-only areas where N.L carries no information.
           col *= mix(0.80, 1.04, vGOcc);
 
+          // ---- verge halo ------------------------------------------------
+          // The path is the one piece of terrain the player has to be able to
+          // trace at a glance from any camera, and a brown ribbon on green
+          // ground is a hue difference, not a value difference -- at overview
+          // scale it disappears. A pale dry band just outside the worn dirt
+          // gives the route a light edge against both the dark road and the
+          // mid-green field, which is the same trick a tower-defense map uses
+          // when it outlines its track. It is *strengthened* with distance to
+          // cancel the detail LOD, so the far half of the loop stays as legible
+          // as the near half.
+          float vergeD = vGRoad + (gnFbm2(w * 0.22 + vec2(6.1, -2.7)) - 0.5) * 1.7;
+          float verge = smoothstep(ROAD_INNER - 0.15, ROAD_INNER + 1.25, vergeD)
+                      * (1.0 - smoothstep(ROAD_OUTER - 0.6, ROAD_OUTER + 1.7, vergeD));
+          col = mix(col, GRASS_DRY, verge * mix(0.34, 0.60, smoothstep(25.0, 95.0, viewDist)));
+
+          // Collapse to mass tone with distance. Without this the apron's
+          // ridgelines carry the same grass/rock mottling as the ground under
+          // the player's feet, and the eye reads them as nearby hillocks.
+          float farBlend = smoothstep(105.0, 265.0, viewDist);
+          vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
+          // Not all the way: leaving a fifth of the local albedo means the key
+          // still models the far peaks instead of flattening them to one value.
+          col = mix(col, farTone, farBlend * 0.80);
+
+          col *= cloudShadow(vGw);
+
           diffuseColor.rgb *= col;
 
           gRough = mix(0.98, 0.76, rockM);
@@ -229,7 +265,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
       );
   };
 
-  mat.customProgramCacheKey = () => `terrain-ground-${roadInner}-${roadOuter}`;
+  mat.customProgramCacheKey = () => `terrain-ground-${roadInner}-${roadOuter}-${cloudShadowKey()}`;
   return mat;
 }
 
@@ -290,6 +326,7 @@ export function createRoadMaterial(opts: RoadMaterialOptions = {}): THREE.MeshSt
         #include <common>
         ${GROUND_GLSL}
         ${GROUND_PALETTE_GLSL}
+        ${cloudShadowSource()}
         varying vec3 vRw;
         varying vec2 vRuv;
         varying vec3 vRn;
@@ -376,6 +413,8 @@ export function createRoadMaterial(opts: RoadMaterialOptions = {}): THREE.MeshSt
           gRoadN = normalize(normalize(vRn)
                  + vec3(-(bx - b0) / e, 0.0, -(bz - b0) / e) * 0.45 * mix(0.3, 1.0, lodMid));
 
+          base *= cloudShadow(vRw);
+
           diffuseColor.rgb *= base;
           diffuseColor.a *= clamp(alpha, 0.0, 1.0);
           gRoadRough = mix(0.99, 0.84, rut) - cobMask * 0.10;
@@ -398,6 +437,6 @@ export function createRoadMaterial(opts: RoadMaterialOptions = {}): THREE.MeshSt
       );
   };
 
-  mat.customProgramCacheKey = () => `road-ground-${halfWidth}`;
+  mat.customProgramCacheKey = () => `road-ground-${halfWidth}-${cloudShadowKey()}`;
   return mat;
 }
