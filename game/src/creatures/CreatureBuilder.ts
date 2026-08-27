@@ -1115,40 +1115,55 @@ function buildDrifterCore(sp: Species, torso: Part) {
   cap.scale(1, d.coreFlat * 0.86, 1);
   torso.add('secondary', xf(cap, { pos: [0, c.y + d.coreRadius * 0.26, -d.coreRadius * 0.12] }));
 
-  // Copper rings, each on its own axis. Nothing else on the roster carries a
-  // perfect circle, so this alone identifies the species in silhouette.
+  /*
+   * The halo mechanism.
+   *
+   * Two rings on arbitrary axes crossing the body read as hula hoops on a
+   * plush toy -- copper bands cutting the one silhouette that is supposed to
+   * be a clean disc. They are now a coaxial pair standing *behind* the core,
+   * nearly edge-on to each other, with spokes: a mechanism the creature hangs
+   * inside, which is both a stronger read and the Gearwood motif.
+   */
   for (let i = 0; i < d.rings; i++) {
-    const tiltA = (i / Math.max(1, d.rings - 1) - 0.5) * 1.5 + 0.35;
-    const ring = new THREE.TorusGeometry(d.ringRadius * (1 - i * 0.16), d.coreRadius * 0.075, 8, 40);
-    torso.add('metal', xf(ring, { pos: [0, c.y, 0], rot: [Math.PI / 2 + tiltA * 0.6, tiltA, 0] }));
-    const stud = blob({ detail: 2, radius: d.coreRadius * 0.13 });
-    torso.add(
-      'accent',
-      xf(stud, {
-        pos: [
-          Math.sin(tiltA) * d.ringRadius * (1 - i * 0.16),
-          c.y + Math.cos(tiltA) * d.ringRadius * 0.35,
-          Math.cos(tiltA) * d.ringRadius * 0.4,
-        ],
-      }),
-    );
+    const R = d.ringRadius * (1 - i * 0.22);
+    const yaw = 0.16 + i * 0.34;
+    const behind = -d.coreRadius * (1.02 + i * 0.42);
+    const ring = new THREE.TorusGeometry(R, d.coreRadius * 0.062, 8, 44);
+    torso.add('metal', xf(ring, { pos: [0, c.y, behind], rot: [0.10, yaw, 0] }));
+
+    // Spokes. Four is enough to say "wheel" and few enough to stay open.
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + i * 0.4;
+      const spoke = new THREE.BoxGeometry(R * 0.94, d.coreRadius * 0.045, d.coreRadius * 0.038);
+      spoke.translate(R * 0.5, 0, 0);
+      spoke.rotateZ(a);
+      torso.add(i === 0 ? 'metal' : 'dark', xf(spoke, { pos: [0, c.y, behind], rot: [0.10, yaw, 0] }));
+    }
+
+    const stud = blob({ detail: 2, radius: d.coreRadius * 0.115 });
+    torso.add('accent', xf(stud, { pos: [Math.cos(yaw) * R, c.y + R * 0.06, behind - Math.sin(yaw) * R] }));
   }
 
-  // Quill halo: a fan radiating outward and back from the core equator.
+  /*
+   * Quill crown: swept up and back over the top of the core, not radiating
+   * from its equator in every direction. A full starburst has no front and
+   * no back, which is why the creature had no facing at all.
+   */
   for (let i = 0; i < d.halo; i++) {
     const u = d.halo === 1 ? 0.5 : i / (d.halo - 1);
-    const ang = (u - 0.5) * Math.PI * 1.7;
-    const len = d.haloLength * (0.55 + 0.45 * Math.cos((u - 0.5) * Math.PI));
-    const dir = V(Math.sin(ang) * 0.94, Math.cos(ang) * 0.62 + 0.18, -Math.abs(Math.cos(ang)) * 0.5 - 0.1).normalize();
-    const g = spike(len, d.coreRadius * 0.085, 0.22, 8, 6);
-    orientUp(g, c.clone().addScaledVector(dir, d.coreRadius * 0.78), dir);
-    torso.add(i % 2 === 0 ? 'metal' : 'dark', g);
-    if (i % 3 === 0) {
-      const tipG = blob({ detail: 2, radius: d.coreRadius * 0.07 });
+    const ang = (u - 0.5) * Math.PI * 1.06;
+    const len = d.haloLength * (0.62 + 0.38 * Math.cos((u - 0.5) * Math.PI));
+    const dir = V(Math.sin(ang) * 0.86, 0.52 + 0.34 * Math.cos(ang), -0.62 - 0.22 * Math.abs(Math.sin(ang))).normalize();
+    const g = spike(len, d.coreRadius * 0.075, 0.34, 8, 6);
+    orientUp(g, c.clone().addScaledVector(dir, d.coreRadius * 0.74).add(V(0, d.coreRadius * 0.18, 0)), dir);
+    torso.add(i % 2 === 0 ? 'accent' : 'secondary', g);
+    if (i % 2 === 0) {
+      const tipG = blob({ detail: 2, radius: d.coreRadius * 0.058 });
+      const base = c.clone().addScaledVector(dir, d.coreRadius * 0.74).add(V(0, d.coreRadius * 0.18, 0));
       torso.add('glow', xf(tipG, { pos: [
-        c.x + dir.x * (d.coreRadius * 0.78 + len),
-        c.y + dir.y * (d.coreRadius * 0.78 + len),
-        c.z + dir.z * (d.coreRadius * 0.78 + len),
+        base.x + dir.x * len,
+        base.y + dir.y * len,
+        base.z + dir.z * len,
       ] }));
     }
   }
@@ -1167,9 +1182,12 @@ function buildStreamers(sp: Species, torso: Part, out: Part[], amp: number[], la
       const v = i / segs;
       pts.push(
         V(
-          x0 * (1 + v * 0.5),
-          d.coreY - d.coreRadius * 0.55 - d.streamerLength * v,
-          z0 - d.streamerLength * 0.28 * v * v,
+          // Trailing, not dangling: the streamers sweep back as much as they
+          // fall, so the creature reads as drifting forward rather than as a
+          // core on four legs.
+          x0 * (1 + v * 0.62),
+          d.coreY - d.coreRadius * 0.55 - d.streamerLength * v * 0.74,
+          z0 - d.streamerLength * (0.30 * v + 0.42 * v * v),
         ),
       );
     }
