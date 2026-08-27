@@ -31,6 +31,9 @@ export const SHOTS = {
   closeup:   { position: [4, 2.6, 8],   target: [2, 1.2, 2],  fov: 34, advance: 2.0 },
   // Mid-combat: far enough into a wave that projectiles and impacts are live.
   combat:    { position: [-6, 9, 16],   target: [-4, 1, 0],   fov: 44, advance: 9.0 },
+  // Opens the codex overlay; only meaningful with --dom.
+  codex:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 6.0,
+               before: 'window.__codex.toggle()' },
 };
 
 const url = args.url || 'http://127.0.0.1:5173';
@@ -74,6 +77,7 @@ const results = [];
 for (const name of shotNames) {
   const shot = SHOTS[name];
   if (!shot) { console.error(`unknown shot: ${name}`); continue; }
+  if (shot.before) await page.evaluate(shot.before);
   await page.evaluate((s) => {
     window.__game.reset();
     window.__game.pose({ position: s.position, target: s.target, fov: s.fov });

@@ -10,6 +10,7 @@ export interface HudCallbacks {
   onSelectSpecies(id: string | null): void;
   onStartWave(): void;
   onToggleSpeed(): void;
+  onOpenCodex(): void;
 }
 
 /**
@@ -46,6 +47,7 @@ export class Hud {
       <div class="hud-bottom">
         <div class="roster" data-roster></div>
         <div class="controls">
+          <button class="btn btn-speed" data-codex type="button" title="Field Codex (C)">Codex</button>
           <button class="btn btn-speed" data-speed type="button">1&times;</button>
           <button class="btn btn-start" data-start type="button">Start Wave</button>
         </div>
@@ -78,6 +80,7 @@ export class Hud {
 
     this.startBtn.addEventListener('click', () => cb.onStartWave());
     this.speedBtn.addEventListener('click', () => cb.onToggleSpeed());
+    this.root.querySelector('[data-codex]')!.addEventListener('click', () => cb.onOpenCodex());
 
     // Escape clears the placement selection -- players expect this and without
     // it a mis-click strands you in placement mode.

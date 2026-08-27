@@ -12,6 +12,7 @@ import { Particles } from './fx/Particles';
 import { Feel, FloatingText } from './fx/Feel';
 import { GameAudio } from './audio/Audio';
 import { Collection, statMultipliers } from './meta/Progression';
+import { CollectionPanel } from './ui/CollectionPanel';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app missing');
@@ -54,6 +55,14 @@ const ROSTER: Array<HudSpecies & { damage: number; range: number; rate: number }
   { id: 'iron',    name: 'Cogsworth', element: 'Iron',    cost: 120, accent: '#d8b45c', damage: 24, range: 8.5, rate: 0.7 },
 ];
 const COSTS = Object.fromEntries(ROSTER.map((r) => [r.id, r.cost]));
+
+const FLAVOUR: Record<string, string> = {
+  sprout: 'Roots itself where the canopy thins. Its thorn-shot hardens mid-flight.',
+  ember:  'Sleeps in ash beds. Wakes hungry, and warm enough to bend brass.',
+  tide:   'Carries a pocket of river with it. Never quite dries.',
+  storm:  'Its coat holds a charge for days. Bad weather follows it uphill.',
+  iron:   'A wound-spring heart. Slow to turn, impossible to stop.',
+};
 
 // --- Battle ---------------------------------------------------------------
 const hudHost = document.createElement('div');
@@ -244,7 +253,13 @@ const hud = new Hud(hudHost, ROSTER, {
     speedIndex = (speedIndex + 1) % SPEEDS.length;
     hud.setSpeedLabel(`${SPEEDS[speedIndex]}×`);
   },
+  onOpenCodex: () => codex.toggle(),
 });
+
+const codex = new CollectionPanel(hudHost, ROSTER.map((r) => ({
+  id: r.id, name: r.name, element: r.element, accent: r.accent,
+  flavour: FLAVOUR[r.id] ?? '',
+})), collection);
 
 const rig = new CameraRig(engine.camera, engine.renderer.domElement);
 
@@ -291,5 +306,6 @@ battle.startWave(4);
 
 engine.start();
 
-(window as unknown as { __battle: Battle }).__battle = battle;
+(window as unknown as { __battle: Battle; __codex: CollectionPanel }).__battle = battle;
+(window as unknown as { __codex: CollectionPanel }).__codex = codex;
 debug.ready = true;
