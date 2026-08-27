@@ -89,7 +89,7 @@ export class Terrain {
     geo.setAttribute('aRoad', new THREE.BufferAttribute(road, 1));
     geo.setAttribute('aOcc', new THREE.BufferAttribute(this.bakeOcclusion(), 1));
 
-    this.material = createTerrainMaterial({ roadInner: 1.75, roadOuter: 4.8 });
+    this.material = createTerrainMaterial({ roadInner: 1.75, roadOuter: 4.8, mapHalf: this.size * 0.5 });
 
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.receiveShadow = true;
@@ -323,13 +323,21 @@ export class Terrain {
     // rim and the first real hill, spanning a quarter of the overview frame.
     // No albedo change can fix missing geometry. Spacing in that band is now
     // 2 to 8 units, which is what lets `distantRelief`'s foothill layer show up
-    // at all. Rings stay coarse past r = 120, where a ridge is a few pixels.
+    // at all.
+    //
+    // The mountain band needs its own answer. Its `fine` layer runs at 0.0150,
+    // a 67-unit wavelength, and the far rings used to step 25 to 32 units apart
+    // -- barely two samples per wavelength. What that undersampling produced was
+    // not a soft mountain but a handful of enormous quads: smooth, streaked grey
+    // slabs standing in the ranges, reading as broken geometry rather than as
+    // rock. Spacing out there is 15 to 18 units now.
     const rings: Array<[number, number]> = [
       [1.00, 0.00], [1.05, 0.00], [1.12, 0.04], [1.20, 0.10],
       [1.30, 0.18], [1.42, 0.28], [1.56, 0.40], [1.72, 0.52],
       [1.90, 0.64], [2.10, 0.76], [2.35, 0.86], [2.65, 0.94],
-      [3.00, 1.00], [3.45, 1.00], [4.00, 1.00], [4.65, 1.00],
-      [5.35, 1.00], [6.00, 1.00], [6.60, 1.00],
+      [3.00, 1.00], [3.33, 1.00], [3.66, 1.00], [4.00, 1.00],
+      [4.35, 1.00], [4.72, 1.00], [5.10, 1.00], [5.50, 1.00],
+      [5.90, 1.00], [6.30, 1.00], [6.60, 1.00],
     ];
 
     // Border of the plane, walked once in order.
@@ -462,14 +470,19 @@ export class Terrain {
     // what colour it was painted. 0.031 gives roughly three crests over the
     // same span and 0.068 breaks each of those into spurs, so the near band
     // has silhouette events at the scale the eye is looking for.
-    const hillBand = smoothstep(half * 1.04, half * 1.42, r)
+    // The ramp-in is wide on purpose. A tight one put the layer's full 25-unit
+    // amplitude within a few metres of the rim, which is a wall at the exact
+    // radius the play camera looks straight at, complete with near-vertical
+    // flanks. Spread over half*1.04 to half*1.55 the band rises as the land
+    // recedes, which is the shape a range of foothills actually has.
+    const hillBand = smoothstep(half * 1.04, half * 1.55, r)
                    * (1 - smoothstep(half * 3.2, half * 5.0, r));
     const hills = ridged2(x * 0.031, z * 0.031, this.seed + 707, 3);
     const spurs = ridged2(x * 0.068, z * 0.068, this.seed + 711, 2);
     // The constant term matters as much as the noise: it is what guarantees the
     // band clears the rim's sightline everywhere, so the recession never breaks
     // open into sky-dome again in a saddle where the noise happens to be low.
-    h += hillBand * (4.5 + 18.0 * Math.pow(hills, 1.4) + 6.0 * Math.pow(spurs, 2.2));
+    h += hillBand * (4.0 + 15.0 * Math.pow(hills, 1.4) + 5.0 * Math.pow(spurs, 2.2));
 
     const mtn = Math.pow(smoothstep(half * 2.5, half * 5.2, r), 1.15);
 
