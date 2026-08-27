@@ -20,6 +20,8 @@ persistence (steps 17+) are the next phase — see below.
 /legacy-prototype
           The original single-file vanilla-JS tower defense prototype this
           project started from. Kept for reference; superseded by /client.
+/.claude/skills
+          Agent skills available to Claude Code in this repo — see below.
 ```
 
 `/server` (Node + TypeScript + Socket.IO, PostgreSQL persistence, the
@@ -76,6 +78,17 @@ The client's simulation (`client/src/battle/`) and UI
 (`client/src/screens`, `client/src/components`) both read from this package,
 so a future server can import the exact same data for authoritative combat
 without duplicating balance numbers.
+
+## Agent skills
+
+`.claude/skills/` holds skills available to Claude Code in this repo.
+
+- **`gauntlet-loop`** — turns a goal into one paste-ready prompt that makes an
+  agent set a concrete quality bar, split the work into judgeable pieces, run a
+  builder and a separate harsh critic on each, and loop until the work wins a
+  blind comparison. Invoke with `/gauntlet-loop <goal>`. Vendored from
+  [robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop);
+  see `.claude/skills/gauntlet-loop/ATTRIBUTION.md`.
 
 ## Roadmap (not yet built)
 
