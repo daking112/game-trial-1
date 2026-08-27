@@ -261,7 +261,16 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // the threshold of anything, from every camera -- while still catching
           // the first band of apron, which now stands high enough to be seen.
           float farBlend = smoothstep(56.0, 130.0, ringR);
-          vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
+
+          // Slope alone picks the far layer, and a big mountain face has one
+          // slope over its whole area -- so it resolved to one flat grey plane,
+          // the single ugliest thing in the low shot. A 90 m noise band pushed
+          // into the threshold breaks that face into treed shoulders and bare
+          // rock. It is deliberately coarse: anything finer is below a pixel at
+          // the distance these surfaces are seen from, and would only alias.
+          float farBreak = gnFbm3(w * 0.011 + vec2(17.0, -5.0));
+          vec3 farTone = mix(FAR_FOREST, FAR_ROCK,
+                             smoothstep(0.24, 0.62, slope + (farBreak - 0.5) * 0.36));
 
           // Separate the ranges by hue, not only by value. Four ridges sharing
           // one blue-grey differ solely in brightness, and the eye stacks them

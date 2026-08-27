@@ -469,9 +469,9 @@ export class Terrain {
     // The constant term matters as much as the noise: it is what guarantees the
     // band clears the rim's sightline everywhere, so the recession never breaks
     // open into sky-dome again in a saddle where the noise happens to be low.
-    h += hillBand * (6.5 + 23.0 * Math.pow(hills, 1.4) + 9.0 * Math.pow(spurs, 2.2));
+    h += hillBand * (4.5 + 18.0 * Math.pow(hills, 1.4) + 6.0 * Math.pow(spurs, 2.2));
 
-    const mtn = Math.pow(smoothstep(half * 2.2, half * 5.0, r), 1.15);
+    const mtn = Math.pow(smoothstep(half * 2.5, half * 5.2, r), 1.15);
 
     // Two octaves, not four. Four gives a dozen small crossings on the skyline
     // that stack up as torn paper; two gives two or three real ranges with
@@ -489,7 +489,13 @@ export class Terrain {
     // Sized against the play camera: from 22 units up, the tallest crest lands
     // about two degrees above the horizon. Any bigger and the range stops being
     // a backdrop and starts being the subject of the shot.
-    return h + mtn * 54.0 * peaks;
+    //
+    // 54 was set while the apron was still inside out, i.e. against ranges the
+    // renderer was throwing most of away. Lit and solid they read far heavier
+    // than they measured, and at 54 they close the sky down to a strip across
+    // the top of the overview. 42 puts the horizon back where a tower-defense
+    // map wants it, with air above the skyline.
+    return h + mtn * 42.0 * peaks;
   }
 
   /* --------------------------------------------------------------- sampling */
