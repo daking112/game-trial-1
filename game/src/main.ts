@@ -10,6 +10,8 @@ import { WAVES } from './combat/Waves';
 import { Hud, type HudSpecies } from './ui/Hud';
 import { Particles } from './fx/Particles';
 import { Feel, FloatingText } from './fx/Feel';
+import { GameAudio } from './audio/Audio';
+import { Collection, statMultipliers } from './meta/Progression';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app missing');
@@ -58,6 +60,14 @@ const hudHost = document.createElement('div');
 hudHost.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 container.appendChild(hudHost);
 
+const audio = new GameAudio();
+const collection = new Collection(ROSTER.map((r) => r.id));
+
+// Browsers block audio until a user gesture; the first interaction unlocks it.
+for (const ev of ['pointerdown', 'keydown'] as const) {
+  window.addEventListener(ev, () => audio.resume(), { once: true });
+}
+
 const particles = new Particles();
 engine.scene.add(particles.points);
 
@@ -65,8 +75,8 @@ const feel = new Feel();
 const floaters = new FloatingText(hudHost);
 
 const battle = new Battle(track, {
-  onWaveStart: (i, name) => hud.banner(`Wave ${i} — ${name}`, 'info'),
-  onWaveEnd: (i, reward) => hud.banner(`Wave ${i} cleared  +${reward}`, 'good'),
+  onWaveStart: (i, name) => { hud.banner(`Wave ${i} — ${name}`, 'info'); audio.fanfare(); },
+  onWaveEnd: (i, reward) => { hud.banner(`Wave ${i} cleared  +${reward}`, 'good'); audio.fanfare(true); },
 
   onHit: (at, spec) => {
     // Small, sharp spark. Impacts must read instantly without burying the
@@ -75,6 +85,7 @@ const battle = new Battle(track, {
       count: 7, color: spec.color, speed: [2.5, 7], life: [0.14, 0.3],
       size: 7, gravity: 5,
     });
+    audio.hit();
   },
 
   onKill: (enemy, at) => {
@@ -92,12 +103,32 @@ const battle = new Battle(track, {
     });
     floaters.spawn(at, `+${a.bounty}`, '#ffd35c');
     feel.shake(big ? 0.42 : 0.11);
+    audio.pop(big);
     if (a.tier === 'colossus') feel.hitStop(0.12, 0.18);
+
+    // Split the kill's XP across every creature that could have contributed,
+    // so support placements still progress rather than only the last shooter.
+    const xp = Math.max(1, Math.round(a.maxHealth * 0.35));
+    for (const t of battle.towers) {
+      const id = (t.visual as { speciesId?: string }).speciesId;
+      if (!id) continue;
+      if (t.position.distanceTo(at) > t.stats.range * 1.15) continue;
+      collection.recordKill(id);
+      const newLevel = collection.awardXp(id, xp);
+      if (newLevel) {
+        const r = ROSTER.find((x) => x.id === id);
+        hud.banner(`${r?.name ?? id} reached Lv.${newLevel}`, 'good', 1.8);
+        floaters.spawn(t.position, `Lv.${newLevel}`, r?.accent ?? '#fff', 1.3);
+      }
+    }
   },
+
+  onFire: (t) => audio.shoot(0.85 + (t.stats.rate % 0.7)),
 
   onLeak: (enemy) => {
     floaters.spawn(enemy.position, `-${enemy.archetype.leak}`, '#ff7a7a', 1.1);
     feel.shake(0.3);
+    audio.leak();
   },
 
   onPhase: (p) => {
@@ -182,15 +213,23 @@ container.addEventListener('pointerup', (e) => {
   const spec = ROSTER.find((r) => r.id === id)!;
 
   const spot = hoverPoint.clone().setY(terrain.heightAt(hoverPoint.x, hoverPoint.z));
-  const visual = placeholderTower(spec.accent);
+  const visual = placeholderTower(spec.accent) as TowerVisual & { speciesId: string };
+  visual.speciesId = spec.id;
   visual.group.position.copy(spot);
+
+  // Carried-over levels from previous runs make a placement stronger.
+  const entry = collection.get(spec.id);
+  const mult = statMultipliers(entry?.level ?? 1);
   battle.addTower(new Tower(visual, {
-    damage: spec.damage,
-    range: spec.range,
-    rate: spec.rate,
-    projectile: { speed: 26, damage: spec.damage, color: spec.accent },
+    damage: spec.damage * mult.damage,
+    range: spec.range * mult.range,
+    rate: spec.rate * mult.rate,
+    projectile: { speed: 26, damage: spec.damage * mult.damage, color: spec.accent },
   }, spot));
+
   battle.gold -= spec.cost;
+  collection.markCaught(spec.id);
+  audio.place();
   hud.select(null);
 });
 

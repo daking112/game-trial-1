@@ -38,6 +38,7 @@ export type BattlePhase = 'idle' | 'running' | 'won' | 'lost';
 
 export interface BattleEvents {
   onKill?(enemy: Enemy, at: THREE.Vector3): void;
+  onFire?(tower: Tower): void;
   onLeak?(enemy: Enemy): void;
   onHit?(at: THREE.Vector3, spec: ProjectileSpec): void;
   onWaveStart?(index: number, name: string): void;
@@ -162,6 +163,7 @@ export class Battle {
       if (this.projectiles.fire(origin, target, t.stats.projectile)) {
         t.cooldown = 1 / Math.max(0.05, t.stats.rate);
         t.visual.playAttack?.();
+        this.events.onFire?.(t);
       }
     }
 
