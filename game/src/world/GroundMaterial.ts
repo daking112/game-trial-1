@@ -41,13 +41,26 @@ export const GROUND_PALETTE_GLSL = /* glsl */ `
 // midground; a tower defense wants the opposite -- ground second only to sky,
 // with the track cutting a dark line through it. DEEP stays low so thicket
 // still reads against meadow.
-const vec3 GRASS_DEEP = vec3(0.062, 0.104, 0.042);
-const vec3 GRASS_MID  = vec3(0.150, 0.240, 0.082);
-const vec3 GRASS_LIT  = vec3(0.290, 0.400, 0.130);
-const vec3 GRASS_DRY  = vec3(0.340, 0.306, 0.140);
+// Measured on the playfield before this: open ground rgb(86,94,59) at the top
+// of its range and rgb(35,65,51) in the thicket, with the whole playfield band
+// at 0.357 luma -- the darkest plane in a frame whose brief asks for bright,
+// saturated and high-key. Every layer comes up by about a quarter. DEEP stays
+// well below MID so thicket still reads against meadow, and DRY loses most of
+// its yellow: at 0.340/0.306/0.140 it was the khaki that made the open ground
+// read as mud rather than as meadow.
+const vec3 GRASS_DEEP = vec3(0.082, 0.136, 0.054);
+const vec3 GRASS_MID  = vec3(0.196, 0.310, 0.104);
+const vec3 GRASS_LIT  = vec3(0.362, 0.488, 0.160);
+const vec3 GRASS_DRY  = vec3(0.372, 0.356, 0.168);
 // The road is a gameplay affordance before it is a surface: it has to read as a
 // separate, lighter, warmer band from any camera angle, so the dirt ramp sits
 // deliberately above the grass in value rather than beside it.
+// Held where it was while the grass came up. The track has to be traceable at
+// a glance from the default camera, and it was separating from the grass almost
+// entirely by saturation -- luma 0.234 against 0.225 to 0.285 for the ground
+// beside it. Lifting the grass and leaving the dirt alone converts that into a
+// value difference, which is the one that survives being looked at from
+// fifty metres up.
 const vec3 DIRT_DARK  = vec3(0.074, 0.053, 0.034);
 const vec3 DIRT_MID   = vec3(0.152, 0.112, 0.070);
 const vec3 DIRT_LIT   = vec3(0.248, 0.198, 0.134);
