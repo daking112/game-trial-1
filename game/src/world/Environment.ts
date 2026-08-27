@@ -146,13 +146,21 @@ export class Environment {
       // out of the layer, the basins behind them stay buried.
       scaleHeight: 33,
       sunDir: this.sunDir,
-      inscatterPower: 3.0,
-      inscatterStrength: 0.85,
+      // A tight inscatter lobe left every range the same cool grey, so four
+      // ridges differed only in value and the eye stacked them as flat paper.
+      // Widening the lobe lets bearing relative to the sun tint them, which is
+      // what actually separates real ranges at distance.
+      inscatterPower: 1.7,
+      inscatterStrength: 1.25,
       // The whole playfield is inside this, so nothing that matters for
       // gameplay picks up haze at all.
       nearClear: 22,
     });
-    scene.fog = new THREE.FogExp2(0xffffff, 0.0118);
+    // At 0.0118 the fog term saturates past ~250 units, so every distant range
+    // resolved to exactly the haze colour and no albedo or inscatter change
+    // could reach them. Thinner fog lets the ranges keep some of their own
+    // value and hue, which is what lets them separate from each other.
+    scene.fog = new THREE.FogExp2(0xffffff, 0.0072);
     scene.fog.color.copy(haze);
   }
 

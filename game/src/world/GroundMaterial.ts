@@ -36,10 +36,15 @@ import { cloudShadowSource, cloudShadowKey } from './CloudShadow';
  * values clips to fluorescent mush through ACES.
  */
 export const GROUND_PALETTE_GLSL = /* glsl */ `
-const vec3 GRASS_DEEP = vec3(0.046, 0.081, 0.033);
-const vec3 GRASS_MID  = vec3(0.086, 0.142, 0.049);
-const vec3 GRASS_LIT  = vec3(0.144, 0.212, 0.071);
-const vec3 GRASS_DRY  = vec3(0.202, 0.183, 0.084);
+// Grass sits deliberately bright. Measured against the rest of the frame the
+// playfield was the darkest plane at 0.32 luma, below sky, far range and
+// midground; a tower defense wants the opposite -- ground second only to sky,
+// with the track cutting a dark line through it. DEEP stays low so thicket
+// still reads against meadow.
+const vec3 GRASS_DEEP = vec3(0.062, 0.104, 0.042);
+const vec3 GRASS_MID  = vec3(0.150, 0.240, 0.082);
+const vec3 GRASS_LIT  = vec3(0.290, 0.400, 0.130);
+const vec3 GRASS_DRY  = vec3(0.340, 0.306, 0.140);
 // The road is a gameplay affordance before it is a surface: it has to read as a
 // separate, lighter, warmer band from any camera angle, so the dirt ramp sits
 // deliberately above the grass in value rather than beside it.
@@ -237,6 +242,15 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // the player's feet, and the eye reads them as nearby hillocks.
           float farBlend = smoothstep(105.0, 265.0, viewDist);
           vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
+
+          // Separate the ranges by hue, not only by value. Four ridges sharing
+          // one blue-grey differ solely in brightness, and the eye stacks them
+          // as flat paper. Nearer land keeps a warm green cast; each range
+          // further out is pushed cooler and bluer, so depth survives even
+          // where two ridges happen to meet at the same luminance.
+          float depthBand = smoothstep(110.0, 320.0, viewDist);
+          farTone = mix(farTone * vec3(1.10, 1.06, 0.88),
+                        farTone * vec3(0.86, 0.94, 1.22), depthBand);
           // Not all the way: leaving a fifth of the local albedo means the key
           // still models the far peaks instead of flattening them to one value.
           col = mix(col, farTone, farBlend * 0.80);

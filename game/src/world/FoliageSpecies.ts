@@ -31,11 +31,14 @@ export const LEAF_PALETTES: LeafPalette[] = [
   // (0 -> 2 get progressively lighter and warmer) rather than in hue. The last
   // two are accents and are deliberately rationed to the rarer species --
   // scattering four hues evenly makes a forest read as confetti.
-  { down: '#1d4526', up: '#6fb544' }, // forest green
-  { down: '#1a3d2b', up: '#57a049' }, // deep green
-  { down: '#33481f', up: '#9dc04d' }, // sunlit yellow-green
-  { down: '#17403a', up: '#57ae8c' }, // verdigris (accent)
-  { down: '#4a2c17', up: '#c2823a' }, // oxidised copper (accent)
+  // The shaded undersides were dark enough that the canopy dragged the whole
+  // playfield to the lowest luma in the frame. Lifted so the forest reads as
+  // bright mass with form, rather than as a dark mat the eye slides off.
+  { down: '#2f6b3c', up: '#86cc55' }, // forest green
+  { down: '#2c6245', up: '#6cba5c' }, // deep green
+  { down: '#4f6f31', up: '#b3d463' }, // sunlit yellow-green
+  { down: '#276a5e', up: '#6cc4a0' }, // verdigris (accent)
+  { down: '#6d4423', up: '#d59a4e' }, // oxidised copper (accent)
 ];
 
 const BARK_DARK = new THREE.Color('#3a2c22');
