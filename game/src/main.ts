@@ -8,6 +8,8 @@ import { Terrain } from './world/Terrain';
 import { Battle, Tower, type TowerVisual } from './combat/Battle';
 import { WAVES } from './combat/Waves';
 import { Hud, type HudSpecies } from './ui/Hud';
+import { Particles } from './fx/Particles';
+import { Feel, FloatingText } from './fx/Feel';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app missing');
@@ -56,9 +58,48 @@ const hudHost = document.createElement('div');
 hudHost.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 container.appendChild(hudHost);
 
+const particles = new Particles();
+engine.scene.add(particles.points);
+
+const feel = new Feel();
+const floaters = new FloatingText(hudHost);
+
 const battle = new Battle(track, {
   onWaveStart: (i, name) => hud.banner(`Wave ${i} — ${name}`, 'info'),
   onWaveEnd: (i, reward) => hud.banner(`Wave ${i} cleared  +${reward}`, 'good'),
+
+  onHit: (at, spec) => {
+    // Small, sharp spark. Impacts must read instantly without burying the
+    // enemy they landed on.
+    particles.burst(at, {
+      count: 7, color: spec.color, speed: [2.5, 7], life: [0.14, 0.3],
+      size: 7, gravity: 5,
+    });
+  },
+
+  onKill: (enemy, at) => {
+    const a = enemy.archetype;
+    const big = a.tier === 'colossus' || a.tier === 'warden';
+    particles.burst(at, {
+      count: big ? 46 : 20,
+      color: a.trim,
+      speed: big ? [4, 15] : [3, 9],
+      life: [0.32, 0.72], size: big ? 13 : 8.5, gravity: 8.5,
+    });
+    particles.burst(at, {
+      count: big ? 22 : 10, color: a.shell,
+      speed: [2, 7], life: [0.35, 0.8], size: 7, gravity: 12,
+    });
+    floaters.spawn(at, `+${a.bounty}`, '#ffd35c');
+    feel.shake(big ? 0.42 : 0.11);
+    if (a.tier === 'colossus') feel.hitStop(0.12, 0.18);
+  },
+
+  onLeak: (enemy) => {
+    floaters.spawn(enemy.position, `-${enemy.archetype.leak}`, '#ff7a7a', 1.1);
+    feel.shake(0.3);
+  },
+
   onPhase: (p) => {
     if (p === 'won') hud.banner('Gearwood holds!', 'good', 99);
     if (p === 'lost') hud.banner('The Thicket falls', 'bad', 99);
@@ -169,9 +210,18 @@ const hud = new Hud(hudHost, ROSTER, {
 const rig = new CameraRig(engine.camera, engine.renderer.domElement);
 
 engine.onUpdate((dt, elapsed) => {
-  const scaled = dt * SPEEDS[speedIndex];
   rig.update(dt);
+  // Feel returns a time scale so hit-stop slows the sim without slowing the
+  // camera or the UI, which would read as a frame hitch instead of impact.
+  const timeScale = feel.update(dt, engine.camera);
+  const scaled = dt * SPEEDS[speedIndex] * timeScale;
+
   battle.update(scaled, elapsed);
+  particles.update(scaled);
+
+  const size = engine.renderer.getSize(new THREE.Vector2());
+  floaters.update(dt, engine.camera, size.x, size.y);
+
   updateHover();
   hud.update(dt);
   hud.setStats(battle.lives, battle.gold, battle.waveIndex);
@@ -182,6 +232,23 @@ engine.onUpdate((dt, elapsed) => {
     running ? 'In Progress' : battle.waveIndex >= WAVES.length ? 'Complete' : 'Start Wave',
   );
 });
+
+// Seed a few towers and open a wave so the game shows live combat on load
+// rather than an empty field.
+for (const spot of [
+  new THREE.Vector3(-14, 0, -6),
+  new THREE.Vector3(6, 0, 2),
+  new THREE.Vector3(-4, 0, -14),
+]) {
+  spot.y = terrain.heightAt(spot.x, spot.z);
+  const visual = placeholderTower('#7ad06a');
+  visual.group.position.copy(spot);
+  battle.addTower(new Tower(visual, {
+    damage: 6, range: 12, rate: 1.8,
+    projectile: { speed: 26, damage: 6, color: '#9effd0' },
+  }, spot.clone()));
+}
+battle.startWave(4);
 
 engine.start();
 

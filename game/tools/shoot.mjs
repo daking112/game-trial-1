@@ -29,6 +29,8 @@ export const SHOTS = {
   low:       { position: [-14, 2.2, 8], target: [4, 1.2, -4], fov: 50, advance: 2.0 },
   topdown:   { position: [0, 62, 0.1],  target: [0, 0, 0],    fov: 40, advance: 2.0 },
   closeup:   { position: [4, 2.6, 8],   target: [2, 1.2, 2],  fov: 34, advance: 2.0 },
+  // Mid-combat: far enough into a wave that projectiles and impacts are live.
+  combat:    { position: [-6, 9, 16],   target: [-4, 1, 0],   fov: 44, advance: 9.0 },
 };
 
 const url = args.url || 'http://127.0.0.1:5173';

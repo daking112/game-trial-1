@@ -68,9 +68,9 @@ export class Engine {
 
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(container.clientWidth, container.clientHeight),
-      0.45, // strength
-      0.7, // radius
-      0.85, // threshold
+      0.34, // strength
+      0.62, // radius
+      0.92, // threshold -- high, so only genuinely hot pixels bloom
     );
     this.composer.addPass(this.bloom);
 
