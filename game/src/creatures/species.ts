@@ -161,6 +161,41 @@ export interface LimbShape {
   bend: number;
   /** Extra outward splay of the whole limb, radians. */
   splay?: number;
+  /**
+   * Foot topology. Not decoration -- a hoof, a talon and a paw are different
+   * skeletons, and identical feet across a roster is the single clearest tell
+   * that six species came off one base mesh.
+   */
+  foot?: 'paw' | 'hoof' | 'talon' | 'stub';
+}
+
+/**
+ * The rest pose.
+ *
+ * An A-pose lineup reads as a blockout no matter how varied the skeletons
+ * are: same ground contact, same negative space, no line of action. Every
+ * value here is a baked offset the idle animation adds to, so each species
+ * stands like itself.
+ */
+export interface PoseShape {
+  /** Yaw/lean/roll of the whole body. */
+  bodyYaw?: number;
+  bodyLean?: number;
+  bodyRoll?: number;
+  chestTwist?: number;
+  neckPitch?: number;
+  headYaw?: number;
+  headPitch?: number;
+  headRoll?: number;
+  /** Stagger: the left leg moves forward by this, the right one back. */
+  legLead?: number;
+  /** Extra stance width beyond `legs.spread`. */
+  stance?: number;
+  /** Left/right arm rest rotation, XYZ radians. */
+  armL?: [number, number, number];
+  armR?: [number, number, number];
+  wingL?: [number, number, number];
+  wingR?: [number, number, number];
 }
 
 export type TailTip = 'point' | 'ember' | 'paddle' | 'spark' | 'blade' | 'leaf' | 'fin';
@@ -273,6 +308,7 @@ export interface ShapeParams {
   fangs: number;
   /** Overall pose attitude: 0 = upright biped, 1 = low quadrupedal crouch. */
   crouch: number;
+  pose?: PoseShape;
   seed: number;
 }
 
@@ -311,12 +347,12 @@ export const SPECIES: Record<string, Species> = {
     tagline: 'Sprouts in the shade of fallen boilers. Hums when it is happy.',
     stats: { damage: 4, range: 11, attackSpeed: 1.15, pierce: 1, cost: 120, projectile: 'seed' },
     palette: {
-      primary: '#6fd155',
-      secondary: '#2c7a38',
-      belly: '#fbf3c4',
-      accent: '#ffb62e',
-      dark: '#16331f',
-      metal: '#d3a355',
+      primary: '#74bf4e',
+      secondary: '#2d5f33',
+      belly: '#f2e6b4',
+      accent: '#f0a52b',
+      dark: '#14261a',
+      metal: '#c79a4e',
       eye: '#ffc93b',
       glow: '#c4ff74',
     },
@@ -325,6 +361,12 @@ export const SPECIES: Record<string, Species> = {
       plan: 'sproutling',
       hide: 'fur',
       crouch: 0.15,
+      pose: {
+        bodyYaw: 0.16, bodyLean: -0.05, bodyRoll: 0.04,
+        headYaw: -0.24, headPitch: -0.10, headRoll: 0.09,
+        legLead: 0.030, stance: 0.010,
+        armL: [-0.55, 0.20, 0.32], armR: [0.28, -0.14, -0.16],
+      },
       fangs: 0,
       seed: 101,
       torso: {
@@ -350,7 +392,7 @@ export const SPECIES: Record<string, Species> = {
       legs: {
         upperLength: 0.085, upperRadius: 0.068, lowerLength: 0.065, lowerRadius: 0.055,
         footLength: 0.115, footRadius: 0.060, digits: 3, clawLength: 0.024,
-        spread: 0.112, forward: 0.015, bend: 0.40,
+        spread: 0.112, forward: 0.015, bend: 0.40, foot: 'stub',
       },
       tail: { length: 0.24, radius: 0.048, rise: 0.20, sweep: -0.06, segments: 4, tip: 'leaf' },
       features: [
@@ -378,12 +420,12 @@ export const SPECIES: Record<string, Species> = {
     tagline: 'Its bark closed over an old brass axle. It has not let go since.',
     stats: { damage: 17, range: 15, attackSpeed: 0.62, pierce: 3, cost: 640, projectile: 'seed' },
     palette: {
-      primary: '#4aa254',
-      secondary: '#6b4526',
-      belly: '#e3d193',
-      accent: '#ffab2b',
-      dark: '#152a1b',
-      metal: '#c2913f',
+      primary: '#5b8f4a',
+      secondary: '#5c3d24',
+      belly: '#cbb884',
+      accent: '#e08b28',
+      dark: '#12201a',
+      metal: '#b8863c',
       eye: '#ffd45e',
       glow: '#9dff7a',
     },
@@ -392,6 +434,12 @@ export const SPECIES: Record<string, Species> = {
       plan: 'quadruped',
       hide: 'bark',
       crouch: 0.70,
+      pose: {
+        bodyYaw: -0.10, bodyRoll: 0.02,
+        chestTwist: 0.10, neckPitch: -0.14,
+        headYaw: 0.46, headPitch: 0.12, headRoll: -0.10,
+        legLead: 0.085, stance: 0.018,
+      },
       fangs: 2,
       seed: 202,
       torso: {
@@ -414,13 +462,13 @@ export const SPECIES: Record<string, Species> = {
         upperLength: 0.270, upperRadius: 0.078, lowerLength: 0.240, lowerRadius: 0.055,
         pastern: 0.075,
         footLength: 0.150, footRadius: 0.070, digits: 2, clawLength: 0.050,
-        spread: 0.150, forward: 0.02, bend: 0.86,
+        spread: 0.150, forward: 0.02, bend: 0.86, foot: 'hoof',
       },
       forelegs: {
         upperLength: 0.280, upperRadius: 0.070, lowerLength: 0.250, lowerRadius: 0.052,
         pastern: 0.060,
         footLength: 0.145, footRadius: 0.068, digits: 2, clawLength: 0.048,
-        spread: 0.145, forward: 0.02, bend: 0.34,
+        spread: 0.145, forward: 0.02, bend: 0.34, foot: 'hoof',
       },
       tail: { length: 0.52, radius: 0.058, rise: 0.10, sweep: 0.18, segments: 6, tip: 'leaf', wave: 0.7 },
       features: [
@@ -447,12 +495,12 @@ export const SPECIES: Record<string, Species> = {
     tagline: 'Eats charcoal, exhales sparks, sleeps on anything still warm.',
     stats: { damage: 9, range: 9, attackSpeed: 1.5, pierce: 2, cost: 340, projectile: 'ember' },
     palette: {
-      primary: '#f0722c',
-      secondary: '#9b2c17',
-      belly: '#ffe0a8',
-      accent: '#ffc12e',
-      dark: '#33110c',
-      metal: '#d8a24a',
+      primary: '#e2662a',
+      secondary: '#7e2418',
+      belly: '#f6d29a',
+      accent: '#f7b32b',
+      dark: '#24100c',
+      metal: '#cf9a45',
       eye: '#fff0a8',
       glow: '#ff7a18',
     },
@@ -461,6 +509,12 @@ export const SPECIES: Record<string, Species> = {
       plan: 'brawler',
       hide: 'fur',
       crouch: 0.10,
+      pose: {
+        bodyYaw: -0.30, bodyLean: 0.10, bodyRoll: -0.05,
+        chestTwist: 0.24, headYaw: 0.34, headPitch: 0.10, headRoll: 0.06,
+        legLead: 0.075, stance: 0.048,
+        armL: [-0.95, 0.30, 0.42], armR: [0.62, -0.36, -0.30],
+      },
       fangs: 4,
       seed: 303,
       torso: {
@@ -487,7 +541,7 @@ export const SPECIES: Record<string, Species> = {
         upperLength: 0.215, upperRadius: 0.085, lowerLength: 0.195, lowerRadius: 0.062,
         pastern: 0.110,
         footLength: 0.155, footRadius: 0.072, digits: 3, clawLength: 0.042,
-        spread: 0.130, forward: 0.0, bend: 0.92,
+        spread: 0.130, forward: 0.0, bend: 0.92, foot: 'paw',
       },
       tail: { length: 0.36, radius: 0.070, rise: 0.24, sweep: -0.14, segments: 5, tip: 'ember' },
       features: [
@@ -516,20 +570,24 @@ export const SPECIES: Record<string, Species> = {
     tagline: 'Pressurises millpond water and lets it go all at once.',
     stats: { damage: 7, range: 13, attackSpeed: 1.05, pierce: 4, cost: 300, projectile: 'jet' },
     palette: {
-      primary: '#2fb6d6',
-      secondary: '#0f5573',
-      belly: '#e6f8f2',
-      accent: '#ffd45e',
-      dark: '#05242f',
-      metal: '#c99a4c',
+      primary: '#2c9ab5',
+      secondary: '#124a63',
+      belly: '#dceee9',
+      accent: '#edb944',
+      dark: '#061d27',
+      metal: '#c2933f',
       eye: '#ffd45e',
       glow: '#7ff0ff',
     },
     shape: {
-      height: 1.90,
+      height: 2.05,
       plan: 'serpent',
       hide: 'scale',
       crouch: 0.0,
+      pose: {
+        bodyYaw: 0.34, bodyRoll: -0.06,
+        neckPitch: -0.20, headYaw: -0.44, headPitch: -0.16, headRoll: 0.12,
+      },
       fangs: 0,
       seed: 404,
       torso: {
@@ -539,9 +597,9 @@ export const SPECIES: Record<string, Species> = {
       },
       neck: { segments: 2, radiusBase: 0.108, radiusTop: 0.085, arch: -0.10 },
       head: {
-        y: 0.905, z: 0.245, radius: 0.145, width: 1.24, depth: 1.28,
-        crownFlat: 0.42, brow: 0.28, cheek: 0.34, jaw: 0.38, tilt: 0.16,
-        snout: { length: 0.150, radius: 0.108, tipRadius: 0.082, drop: 0.006, keel: 0.05, spread: 1.5 },
+        y: 0.905, z: 0.245, radius: 0.140, width: 1.10, depth: 1.42,
+        crownFlat: 0.48, brow: 0.42, cheek: 0.22, jaw: 0.30, tilt: 0.20,
+        snout: { length: 0.185, radius: 0.082, tipRadius: 0.048, drop: 0.012, keel: 0.42, spread: 1.25 },
       },
       eye: {
         radius: 0.062, spacing: 0.110, y: 0.955, z: 0.290,
@@ -550,27 +608,32 @@ export const SPECIES: Record<string, Species> = {
       arms: null,
       legs: null,
       serpent: {
+        // A rearing S out of a long ground coil. The horizontal run matters as
+        // much as the height: nothing else on the roster is wider than it is
+        // tall, and that alone identifies it in a thumbnail row.
         path: [
-          [0.000, 0.760, 0.185],
-          [0.000, 0.610, 0.115],
-          [-0.020, 0.450, 0.010],
-          [-0.055, 0.300, -0.100],
-          [-0.045, 0.165, -0.230],
-          [0.060, 0.085, -0.320],
-          [0.230, 0.070, -0.315],
-          [0.375, 0.090, -0.185],
-          [0.420, 0.135, -0.010],
-          [0.375, 0.185, 0.145],
-          [0.255, 0.235, 0.235],
+          [0.000, 0.780, 0.230],
+          [0.005, 0.640, 0.150],
+          [-0.020, 0.490, 0.045],
+          [-0.070, 0.340, -0.075],
+          [-0.090, 0.200, -0.215],
+          [-0.020, 0.105, -0.350],
+          [0.150, 0.078, -0.415],
+          [0.340, 0.082, -0.360],
+          [0.480, 0.100, -0.205],
+          [0.545, 0.130, -0.010],
+          [0.520, 0.175, 0.180],
+          [0.400, 0.230, 0.320],
+          [0.230, 0.290, 0.375],
         ],
-        radius: 0.108, swell: 0.22, segments: 10,
-        fins: 9, finHeight: 0.115, finEnd: 0.62,
-        scutes: 12,
+        radius: 0.118, swell: 0.20, segments: 12,
+        fins: 12, finHeight: 0.125, finEnd: 0.58,
+        scutes: 16,
       },
       tail: null,
       features: [
         { kind: 'finEars', length: 0.26, width: 0.150, splay: 0.85 },
-        { kind: 'pectoralFins', length: 0.24, width: 0.135, at: 0.14 },
+        { kind: 'pectoralFins', length: 0.26, width: 0.145, at: 0.16 },
         { kind: 'collar', radius: 0.112, tube: 0.024 },
         { kind: 'cheekVents', count: 3, radius: 0.020 },
       ],
@@ -593,12 +656,12 @@ export const SPECIES: Record<string, Species> = {
     tagline: 'Grounds itself through copper roots, then lets the sky have it.',
     stats: { damage: 12, range: 14, attackSpeed: 1.35, pierce: 2, cost: 520, projectile: 'bolt' },
     palette: {
-      primary: '#4a4cb4',
-      secondary: '#1b1b52',
-      belly: '#ffe14d',
-      accent: '#ffe98a',
-      dark: '#0c0d28',
-      metal: '#e08a38',
+      primary: '#4a3f8f',
+      secondary: '#221b4a',
+      belly: '#f2c14e',
+      accent: '#f2d98a',
+      dark: '#0d0a20',
+      metal: '#c9752f',
       eye: '#8ef4ff',
       glow: '#bfe9ff',
     },
@@ -607,6 +670,10 @@ export const SPECIES: Record<string, Species> = {
       plan: 'drifter',
       hide: 'smooth',
       crouch: 0.0,
+      pose: {
+        bodyYaw: 0.22, bodyRoll: 0.10, bodyLean: -0.12,
+        headYaw: -0.30, headPitch: -0.08, headRoll: -0.10,
+      },
       fangs: 2,
       seed: 505,
       torso: {
@@ -657,12 +724,12 @@ export const SPECIES: Record<string, Species> = {
     tagline: 'The Thicket built it a second skeleton. It prefers the new one.',
     stats: { damage: 22, range: 19, attackSpeed: 0.95, pierce: 3, cost: 980, projectile: 'shard' },
     palette: {
-      primary: '#9aa6b8',
-      secondary: '#414a58',
-      belly: '#eef2f8',
-      accent: '#cf3b2c',
-      dark: '#1a1e25',
-      metal: '#dfaa4d',
+      primary: '#8b95a4',
+      secondary: '#3a424e',
+      belly: '#e4e9f0',
+      accent: '#b4432f',
+      dark: '#171b21',
+      metal: '#cfa04a',
       eye: '#ffcf3a',
       glow: '#ffd36e',
     },
@@ -671,6 +738,13 @@ export const SPECIES: Record<string, Species> = {
       plan: 'raptor',
       hide: 'plate',
       crouch: 0.30,
+      pose: {
+        bodyYaw: -0.22, bodyLean: 0.06,
+        chestTwist: -0.14, neckPitch: 0.10,
+        headYaw: 0.40, headPitch: -0.06, headRoll: 0.08,
+        legLead: 0.110, stance: 0.020,
+        wingL: [-0.10, 0.16, -0.30], wingR: [0.20, -0.10, 0.14],
+      },
       fangs: 0,
       seed: 606,
       torso: {
@@ -693,7 +767,7 @@ export const SPECIES: Record<string, Species> = {
         upperLength: 0.235, upperRadius: 0.082, lowerLength: 0.225, lowerRadius: 0.050,
         pastern: 0.165,
         footLength: 0.185, footRadius: 0.056, digits: 3, clawLength: 0.070,
-        spread: 0.115, forward: 0.02, bend: 1.00,
+        spread: 0.115, forward: 0.02, bend: 1.00, foot: 'talon',
       },
       tail: { length: 0.46, radius: 0.055, rise: 0.02, sweep: 0.0, segments: 5, tip: 'blade', wave: 0.6 },
       features: [

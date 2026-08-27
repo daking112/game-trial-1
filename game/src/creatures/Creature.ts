@@ -124,19 +124,32 @@ export class Creature {
       1 + breathe * 0.016,
       1 + breathe * 0.026 + breathe2 * 0.006,
     );
+    // Every rotation below is the species' baked rest pose plus the idle
+    // motion, never the idle motion alone -- otherwise the first frame of
+    // animation throws away the stance the creature was designed to hold.
+    const rest = this.rig.rest;
     r.bob.position.y = breathe * 0.014 + breathe2 * 0.006;
-    r.bob.rotation.x = breathe * 0.012 * (1 - crouch);
-    r.bob.rotation.z = Math.sin(p * 0.61) * 0.012;
+    r.bob.rotation.set(
+      rest.bob[0] + breathe * 0.012 * (1 - crouch),
+      rest.bob[1],
+      rest.bob[2] + Math.sin(p * 0.61) * 0.012,
+    );
 
-    r.chest.rotation.x = -breathe * 0.02;
+    r.chest.rotation.set(rest.chest[0] - breathe * 0.02, rest.chest[1], rest.chest[2]);
 
     // Head: slow scan plus a counter-rotation against the bob, which is what
     // reads as the creature holding its head steady while it breathes.
     const scan = Math.sin(p * 0.47 + 1.1);
-    r.neck.rotation.x = -breathe * 0.03 + Math.sin(p * 0.9) * 0.012;
-    r.head.rotation.y = scan * 0.16;
-    r.head.rotation.x = -r.bob.rotation.x * 0.8 + Math.sin(p * 0.73 + 2.0) * 0.035;
-    r.head.rotation.z = scan * 0.05;
+    r.neck.rotation.set(
+      rest.neck[0] - breathe * 0.03 + Math.sin(p * 0.9) * 0.012,
+      rest.neck[1],
+      rest.neck[2],
+    );
+    r.head.rotation.set(
+      rest.head[0] - (r.bob.rotation.x - rest.bob[0]) * 0.8 + Math.sin(p * 0.73 + 2.0) * 0.035,
+      rest.head[1] + scan * 0.16,
+      rest.head[2] + scan * 0.05,
+    );
 
     // Blink: a fast, rare squash of the head's vertical scale would look odd,
     // so the jaw does a small chew instead -- cheaper and reads as alive.
@@ -164,17 +177,14 @@ export class Creature {
 
     if (r.armL && r.armR) {
       const swing = Math.sin(p * 1.05);
-      r.armL.rotation.x = swing * 0.06;
-      r.armR.rotation.x = -swing * 0.06;
-      r.armL.rotation.z = 0.04 + swing * 0.035;
-      r.armR.rotation.z = -0.04 - swing * 0.035;
+      r.armL.rotation.set(rest.armL[0] + swing * 0.06, rest.armL[1], rest.armL[2] + 0.04 + swing * 0.035);
+      r.armR.rotation.set(rest.armR[0] - swing * 0.06, rest.armR[1], rest.armR[2] - 0.04 - swing * 0.035);
     }
     if (r.wingL && r.wingR) {
       const flap = Math.sin(p * 0.72);
-      r.wingL.rotation.z = flap * 0.09;
-      r.wingR.rotation.z = -flap * 0.09;
-      r.wingL.rotation.x = Math.sin(p * 0.72 + 0.4) * 0.05;
-      r.wingR.rotation.x = Math.sin(p * 0.72 + 0.4) * 0.05;
+      const fx = Math.sin(p * 0.72 + 0.4) * 0.05;
+      r.wingL.rotation.set(rest.wingL[0] + fx, rest.wingL[1], rest.wingL[2] + flap * 0.09);
+      r.wingR.rotation.set(rest.wingR[0] + fx, rest.wingR[1], rest.wingR[2] - flap * 0.09);
     }
 
     // Element glow breathes on its own, slower rhythm.
