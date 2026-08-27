@@ -39,6 +39,9 @@ export const SHOTS = {
   // Opens the codex overlay; only meaningful with --dom.
   codex:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 6.0,
                before: 'window.__codex.toggle()' },
+  // Selects the first placed tower so the inspector panel is visible.
+  inspect:   { position: [-8, 7, 8], target: [-13, 1, -5], fov: 40, advance: 5.0,
+               before: 'window.__selectFirstTower && window.__selectFirstTower()' },
 };
 
 const url = args.url || 'http://127.0.0.1:5173';

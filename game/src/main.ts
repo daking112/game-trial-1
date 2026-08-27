@@ -16,6 +16,7 @@ import { Feel, FloatingText } from './fx/Feel';
 import { GameAudio } from './audio/Audio';
 import { Collection, statMultipliers } from './meta/Progression';
 import { CollectionPanel } from './ui/CollectionPanel';
+import { TowerPanel } from './ui/TowerPanel';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app missing');
@@ -235,7 +236,27 @@ container.addEventListener('pointermove', (e) => {
 container.addEventListener('pointerup', (e) => {
   if (e.button !== 0 || rig.wasDrag) return;
   const id = hud.selectedSpecies;
-  if (!id || !hoverPoint || !hoverValid) return;
+
+  // Not placing: treat the click as a selection attempt on an existing tower.
+  if (!id) {
+    raycaster.setFromCamera(pointer, engine.camera);
+    const hit = raycaster.intersectObject(terrain.mesh, false)[0];
+    const picked = hit ? battle.towerAt(hit.point, 2.0) : null;
+    if (picked) {
+      const sid = (picked.visual as { speciesId?: string }).speciesId;
+      towerPanel.show(picked, towerName(picked), sid ? SPECIES[sid].palette.accent : '#7ad0a8');
+      towerPanel.refresh(battle.gold);
+      selectRing.position.copy(picked.position).setY(picked.position.y + 0.06);
+      selectRing.scale.setScalar(picked.stats.range);
+      selectRing.visible = true;
+    } else {
+      towerPanel.hide();
+      selectRing.visible = false;
+    }
+    return;
+  }
+
+  if (!hoverPoint || !hoverValid) return;
   const spec = ROSTER.find((r) => r.id === id)!;
 
   const spot = hoverPoint.clone().setY(terrain.heightAt(hoverPoint.x, hoverPoint.z));
@@ -250,7 +271,7 @@ container.addEventListener('pointerup', (e) => {
     range: spec.range * mult.range,
     rate: spec.rate * mult.rate,
     projectile: { speed: 26, damage: spec.damage * mult.damage, color: spec.accent },
-  }, spot));
+  }, spot, spec.cost));
 
   battle.gold -= spec.cost;
   collection.markCaught(spec.id);
@@ -277,6 +298,38 @@ const codex = new CollectionPanel(hudHost, ROSTER.map((r) => ({
   flavour: FLAVOUR[r.id] ?? '',
 })), collection);
 
+const selectRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.9, 1, 64).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.42, depthWrite: false }),
+);
+selectRing.visible = false;
+engine.scene.add(selectRing);
+
+const towerPanel = new TowerPanel(hudHost, {
+  onUpgrade: (t) => {
+    if (!battle.upgrade(t)) return;
+    audio.place();
+    floaters.spawn(t.position, `Tier ${t.tier}`, '#9effd0', 1.1);
+    towerPanel.rerender(towerName(t));
+    towerPanel.refresh(battle.gold);
+    selectRing.scale.setScalar(t.stats.range);
+  },
+  onSell: (t) => {
+    const refund = t.sellValue;
+    floaters.spawn(t.position, `+${refund}`, '#ffd35c');
+    battle.sell(t);
+    audio.leak();
+    towerPanel.hide();
+    selectRing.visible = false;
+  },
+  onClose: () => { towerPanel.hide(); selectRing.visible = false; },
+});
+
+function towerName(t: Tower): string {
+  const id = (t.visual as { speciesId?: string }).speciesId;
+  return id ? SPECIES[id].name : 'Creature';
+}
+
 const rig = new CameraRig(engine.camera, engine.renderer.domElement);
 
 engine.onUpdate((dt, elapsed) => {
@@ -297,6 +350,7 @@ engine.onUpdate((dt, elapsed) => {
   hud.update(dt);
   hud.setStats(battle.lives, battle.gold, battle.waveIndex);
   hud.setAffordable(COSTS, battle.gold);
+  towerPanel.refresh(battle.gold);
   const running = battle.phase === 'running';
   hud.setWaveButton(
     !running && battle.waveIndex < WAVES.length,
@@ -321,7 +375,7 @@ for (let i = 0; i < seedSpots2.length; i++) {
   battle.addTower(new Tower(visual, {
     damage: sp.stats.damage, range: sp.stats.range, rate: sp.stats.attackSpeed,
     projectile: { speed: 26, damage: sp.stats.damage, color: sp.palette.glow },
-  }, spot.clone()));
+  }, spot.clone(), sp.stats.cost));
 }
 battle.startWave(4);
 
@@ -329,4 +383,16 @@ engine.start();
 
 (window as unknown as { __battle: Battle; __codex: CollectionPanel }).__battle = battle;
 (window as unknown as { __codex: CollectionPanel }).__codex = codex;
+
+// Test hook: select the first placed tower so the inspector can be captured.
+(window as unknown as { __selectFirstTower: () => void }).__selectFirstTower = () => {
+  const t = battle.towers[0];
+  if (!t) return;
+  const sid = (t.visual as { speciesId?: string }).speciesId;
+  towerPanel.show(t, towerName(t), sid ? SPECIES[sid].palette.accent : '#7ad0a8');
+  towerPanel.refresh(battle.gold);
+  selectRing.position.copy(t.position).setY(t.position.y + 0.06);
+  selectRing.scale.setScalar(t.stats.range);
+  selectRing.visible = true;
+};
 debug.ready = true;

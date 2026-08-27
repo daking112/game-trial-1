@@ -15,6 +15,7 @@ export interface TowerVisual {
   update(dt: number, elapsed: number): void;
   playAttack?(): void;
   faceTarget?(worldPos: THREE.Vector3): void;
+  dispose?(): void;
 }
 
 export interface TowerStats {
@@ -25,13 +26,46 @@ export interface TowerStats {
   projectile: ProjectileSpec;
 }
 
+export const MAX_TOWER_TIER = 4;
+
 export class Tower {
   cooldown = 0;
+  /** Upgrade tier, 1..MAX_TOWER_TIER. */
+  tier = 1;
+  /** Total scrap sunk in, for computing sell value. */
+  invested: number;
+
   constructor(
     readonly visual: TowerVisual,
     readonly stats: TowerStats,
     readonly position: THREE.Vector3,
-  ) {}
+    readonly baseCost: number = 0,
+  ) {
+    this.invested = baseCost;
+  }
+
+  /** Cost of the next tier, or null at max. */
+  get upgradeCost(): number | null {
+    if (this.tier >= MAX_TOWER_TIER) return null;
+    // Each tier costs progressively more than the last so late upgrades
+    // compete with simply placing another creature.
+    return Math.round(this.baseCost * (0.85 + this.tier * 0.55));
+  }
+
+  /** Refund on sell. Deliberately lossy so placement stays a real decision. */
+  get sellValue(): number {
+    return Math.floor(this.invested * 0.6);
+  }
+
+  applyUpgrade(cost: number) {
+    this.tier++;
+    this.invested += cost;
+    this.stats.damage *= 1.42;
+    this.stats.range *= 1.1;
+    this.stats.rate *= 1.16;
+    this.stats.projectile.damage = this.stats.damage;
+    this.visual.group.scale.multiplyScalar(1.07);
+  }
 }
 
 export type BattlePhase = 'idle' | 'running' | 'won' | 'lost';
@@ -88,6 +122,37 @@ export class Battle {
   addTower(tower: Tower) {
     this.towers.push(tower);
     this.group.add(tower.visual.group);
+  }
+
+  /** Upgrade a tower if it is affordable and not maxed. Returns success. */
+  upgrade(tower: Tower): boolean {
+    const cost = tower.upgradeCost;
+    if (cost === null || this.gold < cost) return false;
+    this.gold -= cost;
+    tower.applyUpgrade(cost);
+    return true;
+  }
+
+  /** Sell a tower for a partial refund. */
+  sell(tower: Tower): boolean {
+    const i = this.towers.indexOf(tower);
+    if (i < 0) return false;
+    this.gold += tower.sellValue;
+    this.towers.splice(i, 1);
+    this.group.remove(tower.visual.group);
+    tower.visual.dispose?.();
+    return true;
+  }
+
+  /** Nearest tower to a world point within `radius`, or null. */
+  towerAt(point: THREE.Vector3, radius = 1.6): Tower | null {
+    let best: Tower | null = null;
+    let bestD = radius;
+    for (const t of this.towers) {
+      const d = t.position.distanceTo(point);
+      if (d < bestD) { best = t; bestD = d; }
+    }
+    return best;
   }
 
   /** True if a tower may be placed here: on land, off the road, not stacked. */
