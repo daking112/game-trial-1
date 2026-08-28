@@ -48,6 +48,9 @@ export const SHOTS = {
   // Opens the codex overlay; only meaningful with --dom.
   codex:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 6.0,
                before: 'window.__codex.toggle()' },
+  // Opens the summoning screen with a ten-pull revealed.
+  summon:    { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 4.0,
+               before: 'window.__gacha.addCogs(5000); window.__summon.toggle(); window.__summon.update(99)' },
   // Selects the first placed tower so the inspector panel is visible.
   inspect:   { position: [-9.5, 3.4, -0.5], target: [-14, 1.3, -6], fov: 38, advance: 5.0,
                before: 'window.__selectFirstTower && window.__selectFirstTower()' },

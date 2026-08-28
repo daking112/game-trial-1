@@ -145,7 +145,7 @@ export class CollectionPanel {
       .codex-card.is-locked .codex-orb { background: rgba(255,255,255,.16); filter: grayscale(1); }
       .codex-orb {
         flex: 0 0 auto; width: 50px; height: 50px; border-radius: 50%;
-        background: radial-gradient(circle at 34% 30%, #fff7, transparent 58%), var(--accent);
+        background: radial-gradient(circle at 34% 28%, #fff8, transparent 54%), var(--accent);
         box-shadow: inset 0 -5px 9px rgba(0,0,0,.34);
       }
       .codex-body { min-width: 0; flex: 1; }

@@ -11,6 +11,7 @@ export interface HudCallbacks {
   onStartWave(): void;
   onToggleSpeed(): void;
   onOpenCodex(): void;
+  onOpenSummon(): void;
 }
 
 /**
@@ -47,6 +48,7 @@ export class Hud {
       <div class="hud-bottom">
         <div class="roster" data-roster></div>
         <div class="controls">
+          <button class="btn btn-summon" data-summon type="button" title="Summoning Circle (S)">Summon</button>
           <button class="btn btn-speed" data-codex type="button" title="Field Codex (C)">Codex</button>
           <button class="btn btn-speed" data-speed type="button">1&times;</button>
           <button class="btn btn-start" data-start type="button">Start Wave</button>
@@ -81,6 +83,7 @@ export class Hud {
     this.startBtn.addEventListener('click', () => cb.onStartWave());
     this.speedBtn.addEventListener('click', () => cb.onToggleSpeed());
     this.root.querySelector('[data-codex]')!.addEventListener('click', () => cb.onOpenCodex());
+    this.root.querySelector('[data-summon]')!.addEventListener('click', () => cb.onOpenSummon());
 
     // Escape clears the placement selection -- players expect this and without
     // it a mis-click strands you in placement mode.
@@ -206,7 +209,7 @@ export class Hud {
       .card.is-broke { opacity: .42; cursor: not-allowed; }
       .card-glyph {
         width: 42px; height: 42px; border-radius: 50%;
-        background: radial-gradient(circle at 34% 30%, #fff6, transparent 58%), var(--accent);
+        background: radial-gradient(circle at 34% 28%, #fff8, transparent 54%), var(--accent);
         box-shadow: inset 0 -4px 8px rgba(0,0,0,.34), 0 3px 8px rgba(0,0,0,.4);
       }
       .card-name { font-size: 12.5px; font-weight: 800; }
@@ -227,6 +230,10 @@ export class Hud {
       .btn:hover:not(:disabled) { filter: brightness(1.06); }
       .btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #2f8a63, 0 5px 12px rgba(0,0,0,.4); }
       .btn:disabled { filter: grayscale(.7) brightness(.75); cursor: default; }
+      .btn-summon {
+        background: linear-gradient(180deg, #ffe6a8, #f0b95c);
+        box-shadow: 0 6px 0 #a8763a, 0 10px 20px rgba(0,0,0,.4);
+      }
       .btn-speed {
         background: linear-gradient(180deg, #cfe0f0, #93aec8);
         box-shadow: 0 6px 0 #5b7793, 0 10px 20px rgba(0,0,0,.4);

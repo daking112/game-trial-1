@@ -16,6 +16,8 @@ import { Feel, FloatingText } from './fx/Feel';
 import { GameAudio } from './audio/Audio';
 import { Collection, statMultipliers, EVOLUTION_LEVEL, evolutionBonus } from './meta/Progression';
 import { CollectionPanel } from './ui/CollectionPanel';
+import { SummonPanel } from './ui/SummonPanel';
+import { Gacha } from './meta/Gacha';
 import { TowerPanel } from './ui/TowerPanel';
 import { EndScreen } from './ui/EndScreen';
 
@@ -63,7 +65,7 @@ const ROSTER: Array<HudSpecies & { damage: number; range: number; rate: number }
       name: sp.name,
       element: sp.element,
       cost: sp.stats.cost,
-      accent: sp.palette.accent,
+      accent: sp.palette.primary,
       damage: sp.stats.damage,
       range: sp.stats.range,
       rate: sp.stats.attackSpeed,
@@ -81,7 +83,10 @@ hudHost.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 container.appendChild(hudHost);
 
 const audio = new GameAudio();
-const collection = new Collection(ROSTER.map((r) => r.id));
+// The collection tracks every species, not just the summonable stage-1 ones,
+// so evolved forms are recorded in the codex when they are earned.
+const collection = new Collection(Object.keys(SPECIES));
+const gacha = new Gacha();
 
 // Browsers block audio until a user gesture; the first interaction unlocks it.
 for (const ev of ['pointerdown', 'keydown'] as const) {
@@ -99,7 +104,14 @@ const floaters = new FloatingText(hudHost);
 
 const battle = new Battle(track, {
   onWaveStart: (i, name) => { hud.banner(`Wave ${i} — ${name}`, 'info'); audio.fanfare(); },
-  onWaveEnd: (i, reward) => { hud.banner(`Wave ${i} cleared  +${reward}`, 'good'); audio.fanfare(true); },
+  onWaveEnd: (i, reward) => {
+    // Cogs are the meta currency and the only way to summon. Paying them per
+    // wave ties the gacha to actually playing rather than to idling.
+    const cogs = 30 + i * 10;
+    gacha.addCogs(cogs);
+    hud.banner(`Wave ${i} cleared  +${reward} scrap  +${cogs} cogs`, 'good');
+    audio.fanfare(true);
+  },
 
   onHit: (at, spec) => {
     // Small, sharp spark. Impacts must read instantly without burying the
@@ -365,6 +377,7 @@ const hud = new Hud(hudHost, ROSTER, {
     hud.setSpeedLabel(`${SPEEDS[speedIndex]}×`);
   },
   onOpenCodex: () => codex.toggle(),
+  onOpenSummon: () => summon.toggle(),
 });
 
 const codex = new CollectionPanel(hudHost, ROSTER.map((r) => ({
@@ -452,6 +465,15 @@ function towerName(t: Tower): string {
   return id ? SPECIES[id].name : 'Creature';
 }
 
+const summon = new SummonPanel(hudHost, gacha, {
+  owned: () => new Set(collection.all().filter((e) => e.caught).map((e) => e.speciesId)),
+  onNewSpecies: (id) => {
+    collection.markCaught(id);
+    audio.fanfare(true);
+  },
+  onClose: () => summon.toggle(),
+});
+
 const rig = new CameraRig(engine.camera, engine.renderer.domElement);
 
 engine.onUpdate((dt, elapsed) => {
@@ -470,6 +492,7 @@ engine.onUpdate((dt, elapsed) => {
 
   updateHover();
   hud.update(dt);
+  summon.update(dt);
   endScreen.update(dt);
   hud.setStats(battle.lives, battle.gold, battle.waveIndex);
   hud.setAffordable(COSTS, battle.gold);
@@ -510,6 +533,8 @@ engine.start();
 
 (window as unknown as { __battle: Battle; __codex: CollectionPanel }).__battle = battle;
 (window as unknown as { __codex: CollectionPanel }).__codex = codex;
+(window as unknown as { __summon: SummonPanel }).__summon = summon;
+(window as unknown as { __gacha: Gacha }).__gacha = gacha;
 (window as unknown as { __collection: Collection }).__collection = collection;
 
 // Test hook: force a terminal phase so the end screen can be captured.
