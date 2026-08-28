@@ -18,6 +18,7 @@ import { Collection, statMultipliers, EVOLUTION_LEVEL, evolutionBonus } from './
 import { CollectionPanel } from './ui/CollectionPanel';
 import { SummonPanel } from './ui/SummonPanel';
 import { Gacha } from './meta/Gacha';
+import { Stars, starMultipliers } from './meta/StarUp';
 import { TowerPanel } from './ui/TowerPanel';
 import { EndScreen } from './ui/EndScreen';
 
@@ -87,6 +88,8 @@ const audio = new GameAudio();
 // so evolved forms are recorded in the codex when they are earned.
 const collection = new Collection(Object.keys(SPECIES));
 const gacha = new Gacha();
+// Star ranks are the duplicate-shard sink; they multiply on top of levels.
+const stars = new Stars();
 
 // Browsers block audio until a user gesture; the first interaction unlocks it.
 for (const ev of ['pointerdown', 'keydown'] as const) {
@@ -342,28 +345,45 @@ container.addEventListener('pointerup', (e) => {
 
   if (!hoverPoint || !hoverValid) return;
   const spec = ROSTER.find((r) => r.id === id)!;
+  placeCreature(spec, hoverPoint);
+  audio.place();
+  hud.select(null);
+});
 
-  const spot = hoverPoint.clone().setY(terrain.heightAt(hoverPoint.x, hoverPoint.z));
+/**
+ * Build and place one creature, applying every progression multiplier the
+ * player has earned for that species.
+ *
+ * Split out of the pointer handler so the level and star maths sit on a single
+ * testable path -- `tools/test-stars.mjs` drives this directly instead of
+ * synthesising clicks, so the tested path and the played path cannot drift.
+ */
+function placeCreature(spec: (typeof ROSTER)[number], at: THREE.Vector3): Tower {
+  const spot = at.clone().setY(terrain.heightAt(at.x, at.z));
   const visual = creatureTower(spec.id);
   visual.group.position.copy(spot);
 
   // Carried-over levels from previous runs make a placement stronger.
   const entry = collection.get(spec.id);
-  const mult = statMultipliers(entry?.level ?? 1);
-  battle.addTower(new Tower(visual, {
-    damage: spec.damage * mult.damage,
-    range: spec.range * mult.range,
-    rate: spec.rate * mult.rate,
-    projectile: { speed: 26, damage: spec.damage * mult.damage, color: spec.accent },
-  }, spot, spec.cost));
+  const lvl = statMultipliers(entry?.level ?? 1);
+  // Levels come from play, stars from duplicates. They stack multiplicatively,
+  // so investing in both beats maxing either alone.
+  const star = starMultipliers(stars.get(spec.id));
+  const damage = spec.damage * lvl.damage * star.damage;
+  const tower = new Tower(visual, {
+    damage,
+    range: spec.range * lvl.range * star.range,
+    rate: spec.rate * lvl.rate * star.rate,
+    projectile: { speed: 26, damage, color: spec.accent },
+  }, spot, spec.cost);
+  battle.addTower(tower);
 
   battle.gold -= spec.cost;
   collection.markCaught(spec.id);
-  audio.place();
-  hud.select(null);
   // A creature carried in above the threshold evolves the moment it lands.
-  evolveIfPossible(battle.towers[battle.towers.length - 1]);
-});
+  evolveIfPossible(tower);
+  return tower;
+}
 
 // --- HUD ------------------------------------------------------------------
 let speedIndex = 0;
@@ -535,6 +555,14 @@ engine.start();
 (window as unknown as { __codex: CollectionPanel }).__codex = codex;
 (window as unknown as { __summon: SummonPanel }).__summon = summon;
 (window as unknown as { __gacha: Gacha }).__gacha = gacha;
+(window as unknown as { __stars: Stars }).__stars = stars;
+// Placement driven from a tool, so tests exercise the same multiplier path a
+// real click does.
+(window as unknown as { __place: (id: string, x: number, z: number) => Tower | null }).__place =
+  (id, x, z) => {
+    const spec = ROSTER.find((r) => r.id === id);
+    return spec ? placeCreature(spec, new THREE.Vector3(x, 0, z)) : null;
+  };
 (window as unknown as { __collection: Collection }).__collection = collection;
 
 // Test hook: force a terminal phase so the end screen can be captured.
