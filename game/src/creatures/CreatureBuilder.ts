@@ -154,6 +154,28 @@ function orientFwd(geo: THREE.BufferGeometry, at: THREE.Vector3, dir: THREE.Vect
  * specific; deriving that from a single direction vector leaves the roll to
  * chance, which is how a wing ends up as a sunburst of edge-on shards.
  */
+/**
+ * Place a geometry authored flat in XY using an explicit in-plane basis:
+ * local +X follows `x`, local +Y follows `y` (orthogonalised), thickness
+ * along the resulting normal. Drawing a complex shape -- a wing outline, a
+ * fin -- is tractable in 2D and hopeless directly in 3D, so anything with a
+ * real outline is authored flat and placed with this.
+ */
+function orientBasis(
+  geo: THREE.BufferGeometry,
+  at: THREE.Vector3,
+  x: THREE.Vector3,
+  y: THREE.Vector3,
+) {
+  const xx = x.clone().normalize();
+  const yy = y.clone().sub(xx.clone().multiplyScalar(y.dot(xx))).normalize();
+  const zz = new THREE.Vector3().crossVectors(xx, yy).normalize();
+  const m = new THREE.Matrix4().makeBasis(xx, yy, zz);
+  m.setPosition(at);
+  geo.applyMatrix4(m);
+  return geo;
+}
+
 function orientPlane(geo: THREE.BufferGeometry, at: THREE.Vector3, along: THREE.Vector3, normal: THREE.Vector3) {
   const y = along.clone().normalize();
   const z = normal.clone().sub(y.clone().multiplyScalar(normal.dot(y))).normalize();
@@ -835,7 +857,18 @@ function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string,
       g.scale(spread, 1 / Math.sqrt(spread), 1);
       g.translate(0, base.y, 0);
     }
-    head.add(sn.keel > 0.5 ? 'accent' : 'belly', g);
+    /*
+     * The muzzle is body colour.
+     *
+     * Painting the whole snout tube in the accent the moment `keel` crossed
+     * a threshold gave the serpents a gold carrot bolted to a cream sock --
+     * two saturated blocks on the one part of the creature a player actually
+     * looks at. In the reference artwork the muzzle is always the body
+     * colour; the light value belongs to the chin and throat, and the accent
+     * to a ridge along the top. Only a genuinely hard beak takes the accent
+     * across its whole length.
+     */
+    head.add(sn.keel > 0.85 ? 'accent' : 'primary', g);
 
     if (sn.keel > 0.35) {
       const keel = plate(
@@ -850,7 +883,7 @@ function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string,
       );
       keel.rotateY(Math.PI / 2);
       head.add(
-        sn.keel > 0.5 ? 'accent' : 'primary',
+        sn.keel > 0.85 ? 'secondary' : 'accent',
         xf(keel, { pos: [0, base.y + sn.radius * 0.72, base.z + hd.radius * 0.02] }),
       );
     }
@@ -883,7 +916,7 @@ function buildHead(sp: Species, head: Part, jaw: Part, materials: Record<string,
     );
 
     const chin = blob({ detail: 3, radius: 1, profile: taper(0.62) });
-    chin.scale(mouthW * 1.04, (sn.length + hd.radius * 0.26) * 0.5, sn.radius * 0.46);
+    chin.scale(mouthW * 0.98, (sn.length + hd.radius * 0.20) * 0.5, sn.radius * 0.40);
     chin.rotateX(-Math.PI / 2);
     jaw.add(
       'belly',
@@ -941,6 +974,7 @@ function buildSerpentBody(sp: Species, hips: Part, _materials: Record<string, TH
 function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], lag: number[]) {
   const sr = sp.shape.serpent!;
   const curve = serpentCurve(sp);
+  const arcLen = curve.getLength();
   const n = sr.segments;
 
   let parent: Part = hips;
@@ -968,8 +1002,11 @@ function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], 
       const side = new THREE.Vector3().crossVectors(tan, UP).normalize();
       const down = new THREE.Vector3().crossVectors(side, tan).normalize().multiplyScalar(-1);
       const g = blob({ detail: 2, radius: 1, profile: (y) => ({ w: 1 - 0.25 * Math.abs(y) }) });
-      g.scale(rr * 0.72, rr * 0.34, (1 / sr.scutes) * 2.2);
-      orientFwd(g, p.clone().addScaledVector(down, rr * 0.74), tan);
+      // Sized off the curve's real arc length, not off unit space: with a
+      // fixed guess the plates end up short of each other and read as loose
+      // pale blobs stuck to the belly rather than as a continuous ladder.
+      g.scale(rr * 0.80, rr * 0.30, (arcLen / sr.scutes) * 0.62);
+      orientFwd(g, p.clone().addScaledVector(down, rr * 0.80), tan);
       seg.add('belly', g);
     }
 
@@ -1020,23 +1057,38 @@ function buildSerpentChain(sp: Species, hips: Part, out: Part[], amp: number[], 
     parent = seg;
   }
 
-  // Tail fin.
+  /*
+   * Caudal fin.
+   *
+   * It has to run *along* the tail axis. The previous version faced the
+   * plate down the tangent, which stuck a dinner plate on the end of the
+   * tail -- at stage-2 body radius that read as a metre-wide yellow slab
+   * floating beside the coil. Two lobes: one vertical, one horizontal and
+   * shorter, so the fluke has depth from every angle.
+   */
   const last = out[out.length - 1];
   const tip = curve.getPointAt(1);
   const tan = curve.getTangentAt(1);
-  for (const roll of [0, Math.PI * 0.5]) {
+  const sideV = new THREE.Vector3().crossVectors(tan, UP).normalize();
+  const upV = new THREE.Vector3().crossVectors(sideV, tan).normalize();
+  const L = sr.radius * 2.5;
+  const W = sr.radius * 1.15;
+  for (const [normal, k] of [
+    [sideV, 1.0],
+    [upV, 0.58],
+  ] as Array<[THREE.Vector3, number]>) {
     const g = splinePlate(
       [
-        [0, 0],
-        [sr.radius * 1.5, sr.radius * 1.4],
-        [sr.radius * 0.9, sr.radius * 3.0],
-        [0, sr.radius * 2.2],
-        [-sr.radius * 0.9, sr.radius * 3.0],
-        [-sr.radius * 1.5, sr.radius * 1.4],
+        [0, -sr.radius * 0.55],
+        [W * k, L * 0.30],
+        [W * 0.72 * k, L * 0.88],
+        [0, L * 0.58],
+        [-W * 0.72 * k, L * 0.88],
+        [-W * k, L * 0.30],
       ],
-      sr.radius * 0.16,
+      sr.radius * 0.13,
     );
-    orientFwd(g, tip.clone().addScaledVector(tan, sr.radius * 0.2), tan, roll);
+    orientPlane(g, tip.clone().addScaledVector(tan, -sr.radius * 0.15), tan, normal);
     last.add('accent', g);
   }
 }
@@ -1063,40 +1115,55 @@ function buildDrifterCore(sp: Species, torso: Part) {
   cap.scale(1, d.coreFlat * 0.86, 1);
   torso.add('secondary', xf(cap, { pos: [0, c.y + d.coreRadius * 0.26, -d.coreRadius * 0.12] }));
 
-  // Copper rings, each on its own axis. Nothing else on the roster carries a
-  // perfect circle, so this alone identifies the species in silhouette.
+  /*
+   * The halo mechanism.
+   *
+   * Two rings on arbitrary axes crossing the body read as hula hoops on a
+   * plush toy -- copper bands cutting the one silhouette that is supposed to
+   * be a clean disc. They are now a coaxial pair standing *behind* the core,
+   * nearly edge-on to each other, with spokes: a mechanism the creature hangs
+   * inside, which is both a stronger read and the Gearwood motif.
+   */
   for (let i = 0; i < d.rings; i++) {
-    const tiltA = (i / Math.max(1, d.rings - 1) - 0.5) * 1.5 + 0.35;
-    const ring = new THREE.TorusGeometry(d.ringRadius * (1 - i * 0.16), d.coreRadius * 0.075, 8, 40);
-    torso.add('metal', xf(ring, { pos: [0, c.y, 0], rot: [Math.PI / 2 + tiltA * 0.6, tiltA, 0] }));
-    const stud = blob({ detail: 2, radius: d.coreRadius * 0.13 });
-    torso.add(
-      'accent',
-      xf(stud, {
-        pos: [
-          Math.sin(tiltA) * d.ringRadius * (1 - i * 0.16),
-          c.y + Math.cos(tiltA) * d.ringRadius * 0.35,
-          Math.cos(tiltA) * d.ringRadius * 0.4,
-        ],
-      }),
-    );
+    const R = d.ringRadius * (1 - i * 0.22);
+    const yaw = 0.16 + i * 0.34;
+    const behind = -d.coreRadius * (1.02 + i * 0.42);
+    const ring = new THREE.TorusGeometry(R, d.coreRadius * 0.062, 8, 44);
+    torso.add('metal', xf(ring, { pos: [0, c.y, behind], rot: [0.10, yaw, 0] }));
+
+    // Spokes. Four is enough to say "wheel" and few enough to stay open.
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + i * 0.4;
+      const spoke = new THREE.BoxGeometry(R * 0.94, d.coreRadius * 0.045, d.coreRadius * 0.038);
+      spoke.translate(R * 0.5, 0, 0);
+      spoke.rotateZ(a);
+      torso.add(i === 0 ? 'metal' : 'dark', xf(spoke, { pos: [0, c.y, behind], rot: [0.10, yaw, 0] }));
+    }
+
+    const stud = blob({ detail: 2, radius: d.coreRadius * 0.115 });
+    torso.add('accent', xf(stud, { pos: [Math.cos(yaw) * R, c.y + R * 0.06, behind - Math.sin(yaw) * R] }));
   }
 
-  // Quill halo: a fan radiating outward and back from the core equator.
+  /*
+   * Quill crown: swept up and back over the top of the core, not radiating
+   * from its equator in every direction. A full starburst has no front and
+   * no back, which is why the creature had no facing at all.
+   */
   for (let i = 0; i < d.halo; i++) {
     const u = d.halo === 1 ? 0.5 : i / (d.halo - 1);
-    const ang = (u - 0.5) * Math.PI * 1.7;
-    const len = d.haloLength * (0.55 + 0.45 * Math.cos((u - 0.5) * Math.PI));
-    const dir = V(Math.sin(ang) * 0.94, Math.cos(ang) * 0.62 + 0.18, -Math.abs(Math.cos(ang)) * 0.5 - 0.1).normalize();
-    const g = spike(len, d.coreRadius * 0.085, 0.22, 8, 6);
-    orientUp(g, c.clone().addScaledVector(dir, d.coreRadius * 0.78), dir);
-    torso.add(i % 2 === 0 ? 'metal' : 'dark', g);
-    if (i % 3 === 0) {
-      const tipG = blob({ detail: 2, radius: d.coreRadius * 0.07 });
+    const ang = (u - 0.5) * Math.PI * 1.06;
+    const len = d.haloLength * (0.62 + 0.38 * Math.cos((u - 0.5) * Math.PI));
+    const dir = V(Math.sin(ang) * 0.86, 0.52 + 0.34 * Math.cos(ang), -0.62 - 0.22 * Math.abs(Math.sin(ang))).normalize();
+    const g = spike(len, d.coreRadius * 0.075, 0.34, 8, 6);
+    orientUp(g, c.clone().addScaledVector(dir, d.coreRadius * 0.74).add(V(0, d.coreRadius * 0.18, 0)), dir);
+    torso.add(i % 2 === 0 ? 'accent' : 'secondary', g);
+    if (i % 2 === 0) {
+      const tipG = blob({ detail: 2, radius: d.coreRadius * 0.058 });
+      const base = c.clone().addScaledVector(dir, d.coreRadius * 0.74).add(V(0, d.coreRadius * 0.18, 0));
       torso.add('glow', xf(tipG, { pos: [
-        c.x + dir.x * (d.coreRadius * 0.78 + len),
-        c.y + dir.y * (d.coreRadius * 0.78 + len),
-        c.z + dir.z * (d.coreRadius * 0.78 + len),
+        base.x + dir.x * len,
+        base.y + dir.y * len,
+        base.z + dir.z * len,
       ] }));
     }
   }
@@ -1115,9 +1182,12 @@ function buildStreamers(sp: Species, torso: Part, out: Part[], amp: number[], la
       const v = i / segs;
       pts.push(
         V(
-          x0 * (1 + v * 0.5),
-          d.coreY - d.coreRadius * 0.55 - d.streamerLength * v,
-          z0 - d.streamerLength * 0.28 * v * v,
+          // Trailing, not dangling: the streamers sweep back as much as they
+          // fall, so the creature reads as drifting forward rather than as a
+          // core on four legs.
+          x0 * (1 + v * 0.62),
+          d.coreY - d.coreRadius * 0.55 - d.streamerLength * v * 0.74,
+          z0 - d.streamerLength * (0.30 * v + 0.42 * v * v),
         ),
       );
     }
@@ -1293,14 +1363,33 @@ function buildLimb(
     ? hock.clone().add(V(0, -(L.pastern ?? 0) * Math.cos(a3), (L.pastern ?? 0) * Math.sin(a3)))
     : hock;
 
-  // Haunch: a big mass over the hip. Skinny legs on a round body read as
-  // sticks; the haunch is what makes the stance look like it carries weight.
-  const haunch = blob({ detail: 3, radius: 1 });
-  haunch.scale(L.upperRadius * 1.62, L.upperLength * (digi ? 0.78 : 0.95), L.upperRadius * 2.0);
-  part.add(
-    'secondary',
-    xf(haunch, { pos: [root.x + side * L.upperRadius * 0.15, root.y - L.upperLength * 0.26, root.z] }),
+  /*
+   * Haunch: the thigh mass over the hip.
+   *
+   * A plain ellipsoid here reads as a coconut bolted to the body -- a hard
+   * sphere silhouette in a contrasting value, floating clear of the barrel.
+   * Two things fix it. It is a *teardrop*, narrowing to a point where it
+   * meets the hip, so its outline runs into the torso instead of ending in a
+   * curve; and it is aligned to the femur rather than to world up, so it
+   * follows the leg it belongs to.
+   */
+  const femur = knee.clone().sub(root);
+  const femurLen = Math.max(femur.length(), 1e-4);
+  const haunch = blob({
+    detail: 3,
+    radius: 1,
+    profile: (y) => ({
+      w: 1 - 0.46 * Math.max(0, y) - 0.22 * Math.max(0, -y),
+      d: 1 - 0.38 * Math.max(0, y) - 0.16 * Math.max(0, -y),
+    }),
+  });
+  haunch.scale(L.upperRadius * 1.30, femurLen * (digi ? 0.72 : 0.86), L.upperRadius * 1.62);
+  orientUp(
+    haunch,
+    root.clone().addScaledVector(femur, digi ? 0.30 : 0.34).add(V(side * L.upperRadius * 0.06, 0, 0)),
+    femur.clone().negate().normalize(),
   );
+  part.add('secondary', haunch);
 
   part.add(
     'primary',
@@ -1374,9 +1463,24 @@ function buildArm(
       ),
     );
 
-  const deltoid = blob({ detail: 3, radius: 1 });
-  deltoid.scale(L.upperRadius * 1.55, L.upperRadius * 1.62, L.upperRadius * 1.5);
-  upper.add('secondary', xf(deltoid, { pos: [shoulder.x, shoulder.y, shoulder.z] }));
+  // Deltoid, same rule as the haunch: a teardrop that runs into the chest
+  // rather than a ball sitting beside it.
+  const humerus = elbow.clone().sub(shoulder);
+  const deltoid = blob({
+    detail: 3,
+    radius: 1,
+    profile: (y) => ({
+      w: 1 - 0.40 * Math.max(0, y) - 0.20 * Math.max(0, -y),
+      d: 1 - 0.30 * Math.max(0, y) - 0.14 * Math.max(0, -y),
+    }),
+  });
+  deltoid.scale(L.upperRadius * 1.34, Math.max(humerus.length(), 1e-4) * 0.62, L.upperRadius * 1.42);
+  orientUp(
+    deltoid,
+    shoulder.clone().addScaledVector(humerus, 0.24),
+    humerus.clone().negate().normalize(),
+  );
+  upper.add('secondary', deltoid);
 
   {
     const elbowBand = new THREE.CylinderGeometry(L.lowerRadius * 1.22, L.lowerRadius * 1.16, L.lowerRadius * 0.72, 12);
@@ -1875,100 +1979,196 @@ function buildFeature(
 
     case 'wings': {
       /*
-       * A wing is a swept arm with feathers hanging *behind* it, not a fan of
-       * blades radiating from one point. The bone gives the leading edge and
-       * therefore the silhouette; the feathers overlap along it, all roughly
-       * parallel, longest at the hand. Getting that order right is the whole
-       * difference between a bird and a pincushion.
+       * A wing, not a fan of blades.
+       *
+       * The failure mode of a procedural wing is a pincushion: N feather
+       * shapes radiating from one point, daylight between every pair, no
+       * membrane. What makes a wing read is the *armature* -- humerus,
+       * elbow, wrist, then fingers fanning back -- with one continuous
+       * surface stretched between the fingers and scalloped where it hangs
+       * between them.
+       *
+       * So the whole wing is authored flat, in its own plane: X runs span-
+       * wise from shoulder to tip, Y runs chordwise with the leading edge
+       * near 0 and the trailing edge at -chord. Then the plane is placed
+       * into the body's frame. Authoring in 3D directly is what produced
+       * the blade-fan; in 2D the outline is simply drawable.
        */
-      const shoulder = fr.at(t.shoulderY + 0.22).clone().addScaledVector(fr.dorsal, t.radius * 0.40);
-      const l = new Part('wingL', c.chest, V(-t.radius * 0.70, shoulder.y, shoulder.z));
-      const r = new Part('wingR', c.chest, V(t.radius * 0.70, shoulder.y, shoulder.z));
-      const span = f.span;
+      const S = f.span;
+      const C = f.chord;
+      const shoulder = fr.at(t.shoulderY - 0.58).clone().addScaledVector(fr.dorsal, t.radius * 0.62);
+      const l = new Part('wingL', c.chest, V(-t.radius * 0.62, shoulder.y, shoulder.z));
+      const r = new Part('wingR', c.chest, V(t.radius * 0.62, shoulder.y, shoulder.z));
+
       for (const [part, side] of [
         [l, -1],
         [r, 1],
       ] as Array<[Part, number]>) {
         const base = part.abs.clone();
-        const elbow = base.clone().add(V(side * span * 0.34, span * 0.30, -span * 0.06));
-        const wrist = base.clone().add(V(side * span * 0.72, span * 0.44, -span * 0.20));
-        const handTip = base.clone().add(V(side * span * 0.98, span * 0.34, -span * 0.42));
-        const bone = new THREE.CatmullRomCurve3([base, elbow, wrist, handTip]);
+        // Wing plane. Spanwise goes out and up; chordwise-up goes up and
+        // forward, so -Y (the membrane) falls back and down. The plane
+        // therefore faces forward-outward and presents its full area to a
+        // three-quarter view instead of turning edge-on.
+        const spanAxis = V(side * 0.72, 0.58, -0.52).normalize();
+        let upAxis = V(side * -0.16, 0.46, 0.87).normalize();
+        upAxis = upAxis.sub(spanAxis.clone().multiplyScalar(upAxis.dot(spanAxis))).normalize();
+        const faceN = new THREE.Vector3().crossVectors(spanAxis, upAxis);
+        const at = (u: number, v: number) =>
+          base.clone().addScaledVector(spanAxis, u).addScaledVector(upAxis, v);
 
-        // Leading-edge bone.
-        part.add(
-          'secondary',
-          taperedTube(bone, (u) => f.chord * (0.155 - 0.095 * u), 16, 10),
-        );
-        if (f.plated) {
-          for (const u of [0.30, 0.62]) {
-            const at = bone.getPointAt(u);
-            const joint = cog(f.chord * 0.17, 8, f.chord * 0.075, 0.26, 0.34);
-            joint.rotateY(Math.PI / 2);
-            part.add('metal', xf(joint, { pos: [at.x, at.y, at.z] }));
-          }
+        // --- armature ---------------------------------------------------
+        const root: [number, number] = [0, 0];
+        const elbow: [number, number] = [0.34 * S, 0.10 * S];
+        const wrist: [number, number] = [0.70 * S, 0.15 * S];
+        const tip: [number, number] = [1.0 * S, 0.05 * S];
+        // Finger tips, outermost first. The hand carries most of them; a
+        // final strut runs from the elbow and closes the inner membrane.
+        const tips: Array<[number, number]> = [];
+        const nf = Math.max(3, Math.min(5, f.fingers));
+        for (let i = 0; i < nf - 1; i++) {
+          const u = i / (nf - 2);
+          tips.push([
+            THREE.MathUtils.lerp(0.99, 0.60, Math.pow(u, 0.86)) * S,
+            THREE.MathUtils.lerp(-0.30, -1.04, Math.sin(u * 1.24)) * C - f.droop * S * u,
+          ]);
         }
+        const innerTip: [number, number] = [0.34 * S, -0.98 * C - f.droop * S];
+        const heel: [number, number] = [0.015 * S, -0.44 * C];
 
-        // Feathers, sampled along the bone from shoulder to hand.
-        const n = f.fingers + 4;
-        for (let i = 0; i < n; i++) {
-          const u = 0.10 + (i / (n - 1)) * 0.90;
-          const at = bone.getPointAt(u);
-          const tan = bone.getTangentAt(u);
-          // Trailing direction: back and down, fanning outward toward the hand.
-          const along = V(side * (0.12 + 0.42 * u), -0.30 - f.droop * (1 - u) - 0.22 * u, -1).normalize();
-          const normal = new THREE.Vector3().crossVectors(tan, along).normalize();
-          const len = span * (0.42 + 0.46 * Math.pow(u, 1.25));
-          const w = f.chord * (0.30 - 0.10 * u);
-          const g = splinePlate(
-            [
-              [0, 0],
-              [w * 0.5, len * 0.22],
-              [w * 0.42, len * 0.68],
-              [0, len],
-              [-w * 0.34, len * 0.62],
-              [-w * 0.42, len * 0.18],
-            ],
-            len * 0.035,
-          );
-          orientPlane(g, at.clone().addScaledVector(along, -len * 0.04), along, normal);
-          part.add(i % 2 === 0 ? 'primary' : 'secondary', g);
-
-          // Dark tip band: the graphic edge that makes a wing read at range.
-          const tipG = splinePlate(
-            [
-              [0, len * 0.70],
-              [w * 0.40, len * 0.76],
-              [0, len * 1.01],
-              [-w * 0.30, len * 0.74],
-            ],
-            len * 0.042,
-          );
-          orientPlane(tipG, at.clone().addScaledVector(along, -len * 0.04), along, normal);
-          part.add(i > n - 4 ? 'accent' : 'dark', tipG);
+        // --- membrane ---------------------------------------------------
+        // Leading edge out to the tip, then home along the trailing edge,
+        // dipping toward the hub between each pair of finger tips so the
+        // edge scallops instead of running straight.
+        const outline: Array<[number, number]> = [
+          root,
+          [elbow[0], elbow[1] + 0.012 * S],
+          [wrist[0], wrist[1] + 0.010 * S],
+          tip,
+        ];
+        const scallop = (a: [number, number], b: [number, number], hub: [number, number], k: number) => {
+          const mx = (a[0] + b[0]) * 0.5;
+          const my = (a[1] + b[1]) * 0.5;
+          return [hub[0] + (mx - hub[0]) * k, hub[1] + (my - hub[1]) * k] as [number, number];
+        };
+        outline.push(tips[0]);
+        for (let i = 1; i < tips.length; i++) {
+          outline.push(scallop(tips[i - 1], tips[i], wrist, 0.80));
+          outline.push(tips[i]);
         }
+        outline.push(scallop(tips[tips.length - 1], innerTip, elbow, 0.82));
+        outline.push(innerTip);
+        outline.push(scallop(innerTip, heel, [elbow[0] * 0.4, elbow[1]], 0.86));
+        outline.push(heel);
 
-        // Coverts: one solid plate filling the inner wing, so there is a mass
-        // behind the feathers instead of daylight.
+        const skinG = splinePlate(outline, C * 0.055, C * 0.020);
+        orientBasis(skinG, base, spanAxis, upAxis);
+        part.add('secondary', skinG);
+
+        // Coverts: a lighter band hugging the leading edge. The wing is not
+        // one flat colour, and this value step is what gives it depth at
+        // thumbnail size -- but it has to follow the arm. Floating it out in
+        // the middle of the membrane just puts a pale blob on the wing.
+        const innerPanel: Array<[number, number]> = [
+          [0.02 * S, -0.03 * C],
+          [elbow[0], elbow[1] * 0.62],
+          [wrist[0] * 0.96, wrist[1] * 0.52],
+          [wrist[0] * 0.90, -0.26 * C],
+          [elbow[0] * 0.94, -0.46 * C],
+          [0.04 * S, -0.30 * C],
+        ];
+        const panelG = splinePlate(innerPanel, C * 0.070, C * 0.024);
+        orientBasis(panelG, base.clone().addScaledVector(faceN, C * 0.028), spanAxis, upAxis);
+        part.add('primary', panelG);
+
+        // One pale flash between the two innermost fingers -- a single bright
+        // shape reads far better than a whole pale half-wing.
         {
-          const along = V(side * 0.20, -0.40, -1).normalize();
-          const tan = bone.getTangentAt(0.24);
-          const normal = new THREE.Vector3().crossVectors(tan, along).normalize();
-          const len = span * 0.44;
-          const w = f.chord * 0.92;
-          const g = splinePlate(
-            [
-              [0, 0],
-              [w * 0.5, len * 0.30],
-              [w * 0.30, len * 0.80],
-              [-w * 0.10, len],
-              [-w * 0.55, len * 0.62],
-              [-w * 0.52, len * 0.14],
-            ],
-            len * 0.06,
+          const a = tips[tips.length - 1];
+          const b = innerTip;
+          const sc = scallop(a, b, elbow, 0.82);
+          const inset = (q: [number, number], k: number) =>
+            [elbow[0] + (q[0] - elbow[0]) * k, elbow[1] + (q[1] - elbow[1]) * k] as [number, number];
+          const flashG = splinePlate(
+            [inset(a, 0.34), a, sc, b, inset(b, 0.34)],
+            C * 0.062,
+            C * 0.022,
           );
-          orientPlane(g, bone.getPointAt(0.26), along, normal);
-          part.add('primary', g);
+          orientBasis(flashG, base.clone().addScaledVector(faceN, C * 0.016), spanAxis, upAxis);
+          part.add('belly', flashG);
+        }
+
+        // --- bones ------------------------------------------------------
+        const boneTube = (a: [number, number], b: [number, number], r0: number, r1: number) => {
+          const pa = at(a[0], a[1]);
+          const pb = at(b[0], b[1]);
+          const mid = pa.clone().lerp(pb, 0.5);
+          return taperedTube(
+            new THREE.CatmullRomCurve3([pa, mid, pb]),
+            (u) => THREE.MathUtils.lerp(r0, r1, u),
+            8,
+            8,
+          );
+        };
+        part.add('primary', boneTube(root, elbow, C * 0.155, C * 0.115));
+        part.add('primary', boneTube(elbow, wrist, C * 0.115, C * 0.085));
+        part.add('primary', boneTube(wrist, tip, C * 0.085, C * 0.030));
+        for (let i = 0; i < tips.length; i++) {
+          part.add('primary', boneTube(wrist, tips[i], C * 0.070, C * 0.020));
+        }
+        part.add('primary', boneTube(elbow, innerTip, C * 0.078, C * 0.022));
+
+        // --- graphic edge -----------------------------------------------
+        // A dark band chasing the trailing edge, offset a hair proud of the
+        // membrane. This is the single thing that makes a wing readable
+        // against a bright sky at range.
+        for (let i = 0; i < tips.length - 1; i++) {
+          const a = tips[i];
+          const b = tips[i + 1];
+          const sc = scallop(a, b, wrist, 0.80);
+          const inset = (p: [number, number], k: number) =>
+            [wrist[0] + (p[0] - wrist[0]) * k, wrist[1] + (p[1] - wrist[1]) * k] as [number, number];
+          const bandG = splinePlate(
+            [a, sc, b, inset(b, 0.86), inset(sc, 0.84), inset(a, 0.86)],
+            C * 0.075,
+            C * 0.024,
+          );
+          orientBasis(bandG, base.clone().addScaledVector(faceN, C * 0.008), spanAxis, upAxis);
+          part.add(i === 0 ? 'accent' : 'dark', bandG);
+        }
+
+        // --- hardware ---------------------------------------------------
+        if (f.plated) {
+          for (const [p, rad] of [
+            [elbow, C * 0.20],
+            [wrist, C * 0.165],
+          ] as Array<[[number, number], number]>) {
+            const g = cog(rad, 9, C * 0.085, 0.24, 0.34);
+            orientBasis(g, at(p[0], p[1]), spanAxis, upAxis);
+            part.add('metal', g);
+          }
+          // Wrist claw -- the thumb. Small, but it says "this is a hand".
+          const claw = spike(C * 0.34, C * 0.055, 0.5, 8, 7);
+          const clawDir = spanAxis.clone().multiplyScalar(0.55).addScaledVector(upAxis, 0.83).normalize();
+          orientUp(claw, at(wrist[0], wrist[1] + 0.02 * S), clawDir);
+          part.add('claw', claw);
+          // Leading-edge armour strakes.
+          for (const u of [0.16, 0.48, 0.82]) {
+            const px = THREE.MathUtils.lerp(root[0], wrist[0], u);
+            const py = THREE.MathUtils.lerp(root[1], wrist[1], u) + 0.012 * S;
+            const g = plate(
+              [
+                [-C * 0.10, 0],
+                [C * 0.10, 0],
+                [C * 0.055, C * 0.15],
+                [-C * 0.075, C * 0.13],
+              ],
+              C * 0.055,
+              C * 0.018,
+            );
+            g.rotateZ(-Math.PI / 2);
+            orientBasis(g, at(px, py), spanAxis, upAxis);
+            part.add('metal', g);
+          }
         }
       }
       return { wings: [l, r] };
