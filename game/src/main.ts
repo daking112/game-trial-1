@@ -18,7 +18,7 @@ import { Collection, statMultipliers, EVOLUTION_LEVEL, evolutionBonus } from './
 import { CollectionPanel } from './ui/CollectionPanel';
 import { SummonPanel } from './ui/SummonPanel';
 import { Gacha } from './meta/Gacha';
-import { Stars, starMultipliers } from './meta/StarUp';
+import { Stars, starMultipliers, starCost } from './meta/StarUp';
 import { TowerPanel } from './ui/TowerPanel';
 import { EndScreen } from './ui/EndScreen';
 
@@ -556,6 +556,10 @@ engine.start();
 (window as unknown as { __summon: SummonPanel }).__summon = summon;
 (window as unknown as { __gacha: Gacha }).__gacha = gacha;
 (window as unknown as { __stars: Stars }).__stars = stars;
+// Test hook: the star cost curve, so `tools/test-economy.mjs` measures the
+// same function the star-up UI charges against.
+(window as unknown as { __starCost: (id: string, s: number) => number | null }).__starCost =
+  (id, s) => starCost(id, s);
 // Placement driven from a tool, so tests exercise the same multiplier path a
 // real click does.
 (window as unknown as { __place: (id: string, x: number, z: number) => Tower | null }).__place =

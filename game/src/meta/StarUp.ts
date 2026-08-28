@@ -1,4 +1,4 @@
-import { SPECIES, type Rarity } from '../creatures/species';
+import { SPECIES } from '../creatures/species';
 import type { Gacha } from './Gacha';
 
 /**
@@ -16,26 +16,23 @@ import type { Gacha } from './Gacha';
 export const MAX_STARS = 5;
 
 /**
- * Shard cost of the next star, per rarity.
+ * Shard cost of the next star.
  *
- * Rarer species cost more per star but also earn more shards per duplicate,
- * so the number of duplicates needed stays roughly flat across rarities. The
- * rarity tax is on time-to-acquire, not on time-to-upgrade.
+ * Flat across rarities, deliberately. The rarity tax is already paid twice
+ * over on the way in -- a rare species is pulled less often, and until it is
+ * pulled at all there is nothing to star up. Charging more shards per star on
+ * top of that made the last star on a Rare a fifty-run grind against nine
+ * runs for a Common, for the same +60% damage. Duplicate shard value scales
+ * with drop rate instead (see `duplicateShards`), so every species reaches
+ * the same star at roughly the same number of pulls.
  */
-const STAR_COST_BASE: Record<Rarity, number> = {
-  Common: 20,
-  Uncommon: 45,
-  Rare: 110,
-  Epic: 260,
-  Legendary: 600,
-};
+const STAR_COST_BASE = 24;
 
 export function starCost(speciesId: string, currentStars: number): number | null {
   if (currentStars >= MAX_STARS) return null;
-  const sp = SPECIES[speciesId];
-  if (!sp) return null;
+  if (!SPECIES[speciesId]) return null;
   // Escalates so the last star is a real commitment rather than a formality.
-  return Math.round(STAR_COST_BASE[sp.rarity] * (1 + currentStars * 0.85));
+  return Math.round(STAR_COST_BASE * (1 + currentStars * 0.85));
 }
 
 /**

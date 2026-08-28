@@ -32,14 +32,98 @@ export const RARITY_WEIGHTS: Record<Rarity, number> = {
   Legendary: 3,
 };
 
+/**
+ * Shards a duplicate is worth, expressed as an average per pull.
+ *
+ * Duplicate value is derived from how often a species actually drops, not
+ * from a flat per-rarity table. A flat table double-taxes rarity: a Rare
+ * costs more shards per star AND hands them over six times less often, so
+ * the same "one more star" took 51 full runs at Rare against 9 at Common.
+ * Deriving it means every species in the pool earns shards at the same rate
+ * per pull, and the rarity tax lands only on time-to-acquire -- which is
+ * what the design says it is for.
+ *
+ * It also survives the pool changing: add a species and the rates re-derive
+ * instead of silently skewing.
+ */
+export const TARGET_SHARDS_PER_PULL = 3;
+
+let ratesCache: { key: string; rates: Record<string, number> } | null = null;
+/**
+ * True while the rate measurement is running.
+ *
+ * A ten-pull can repeat a species within its own batch, which makes the
+ * second one a duplicate and asks what a duplicate is worth -- the very
+ * question the measurement exists to answer. Shard value is irrelevant to
+ * the tally, so during measurement the question is answered with zero
+ * instead of re-entering.
+ */
+let measuring = false;
+
+/**
+ * Effective per-species pull rates, measured by running the real roller.
+ *
+ * Not derived from RARITY_WEIGHTS. The weights are the base rates; what a
+ * player actually sees is bent by pity and by the ten-pull Rare guarantee,
+ * and for this pool that gap is large -- a 10.3% base Rare lands at about
+ * 15% observed. Sizing duplicate value off the base rate therefore overpays
+ * the rarest species by half again.
+ *
+ * Deriving it by simulation rather than by algebra is deliberate. A formula
+ * would have to restate the pity rules, and a restatement drifts from the
+ * rules it copies; this cannot, because it calls them. It is seeded, so the
+ * numbers are identical on every run, and cached against the pool's identity
+ * so a changed pool re-measures instead of serving a stale answer.
+ *
+ * Nothing is owned in the simulation, so every pull is new, no duplicate
+ * shard value is ever looked up, and this cannot recurse into itself.
+ */
+export function effectivePullRates(): Record<string, number> {
+  const pool = summonPool();
+  const key = pool.join(',');
+  if (ratesCache && ratesCache.key === key) return ratesCache.rates;
+
+  const BATCHES = 2000; // ten pulls each, so 20,000 samples
+  measuring = true;
+  const sim = new Gacha(0x9e3779b9, emptyGachaState(), true);
+  sim.addCogs(BATCHES * MULTI_COST);
+
+  const counts: Record<string, number> = {};
+  for (const id of pool) counts[id] = 0;
+  const nothingOwned = new Set<string>();
+  let total = 0;
+  for (let i = 0; i < BATCHES; i++) {
+    const results = sim.summon(10, nothingOwned);
+    if (!results) break;
+    for (const r of results) {
+      counts[r.speciesId] = (counts[r.speciesId] ?? 0) + 1;
+      total++;
+    }
+  }
+
+  measuring = false;
+
+  const rates: Record<string, number> = {};
+  for (const id of pool) rates[id] = total > 0 ? counts[id] / total : 0;
+  ratesCache = { key, rates };
+  return rates;
+}
+
+/** Probability that one pull yields exactly this species, pity included. */
+export function pullRate(speciesId: string): number {
+  return effectivePullRates()[speciesId] ?? 0;
+}
+
 /** Shards awarded when a summon produces a species already owned. */
-export const DUPLICATE_SHARDS: Record<Rarity, number> = {
-  Common: 5,
-  Uncommon: 12,
-  Rare: 30,
-  Epic: 80,
-  Legendary: 200,
-};
+export function duplicateShards(speciesId: string): number {
+  if (measuring) return 0;
+  const rate = pullRate(speciesId);
+  // A species outside the pool can still be owned (evolutions are earned, not
+  // pulled) and can never be duplicated, so its rate is zero. One shard keeps
+  // the value defined rather than infinite.
+  if (rate <= 0) return 1;
+  return Math.max(1, Math.round(TARGET_SHARDS_PER_PULL / rate));
+}
 
 function atLeast(r: Rarity, floor: Rarity): boolean {
   return RARITY_ORDER.indexOf(r) >= RARITY_ORDER.indexOf(floor);
@@ -143,7 +227,11 @@ export class Gacha {
   state: GachaState;
   private rng: () => number;
 
-  constructor(seed = Date.now() >>> 0, state?: GachaState) {
+  /**
+   * `transient` drives a throwaway instance for rate measurement: it never
+   * touches storage, so measuring cannot overwrite a real player's save.
+   */
+  constructor(seed = Date.now() >>> 0, state?: GachaState, private readonly transient = false) {
     this.rng = mulberry32(seed);
     this.state = state ?? emptyGachaState();
     if (!state) this.load();
@@ -222,7 +310,7 @@ export class Gacha {
     const isNew = !owned.has(speciesId);
     let shards = 0;
     if (!isNew) {
-      shards = DUPLICATE_SHARDS[actualRarity];
+      shards = duplicateShards(speciesId);
       this.state.shards[speciesId] = (this.state.shards[speciesId] ?? 0) + shards;
     }
 
@@ -259,7 +347,7 @@ export class Gacha {
         const rarity = SPECIES[id].rarity;
         let shards = 0;
         if (!isNew) {
-          shards = DUPLICATE_SHARDS[rarity];
+          shards = duplicateShards(id);
           this.state.shards[id] = (this.state.shards[id] ?? 0) + shards;
         }
         results[results.length - 1] = { speciesId: id, rarity, isNew, shards, viaPity: true };
@@ -299,6 +387,8 @@ export class Gacha {
   }
 
   save() {
+    // A measurement instance must leave no trace in storage.
+    if (this.transient) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     } catch {
