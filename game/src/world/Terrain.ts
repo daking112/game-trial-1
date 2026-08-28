@@ -89,7 +89,7 @@ export class Terrain {
     geo.setAttribute('aRoad', new THREE.BufferAttribute(road, 1));
     geo.setAttribute('aOcc', new THREE.BufferAttribute(this.bakeOcclusion(), 1));
 
-    this.material = createTerrainMaterial({ roadInner: 1.75, roadOuter: 4.8 });
+    this.material = createTerrainMaterial({ roadInner: 1.75, roadOuter: 4.8, mapHalf: this.size * 0.5 });
 
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.receiveShadow = true;
@@ -313,11 +313,31 @@ export class Terrain {
 
     // (scale, how circular). The last ring sits at half * 6.6 -- comfortably
     // inside both the sky dome and the camera's far plane.
+    //
+    // The near rings are dense on purpose. The old list stepped 1.06, 1.16,
+    // 1.32, 1.58, 1.95 -- five rings covering r = 42 to 78, so the radial
+    // sample spacing across the first band of land beyond the rim was 6 to 15
+    // units. Any relief with a wavelength under about 30 units simply could not
+    // be represented there, and the result was the flaw that survived four
+    // rounds of colour work: a smooth, featureless sage wash between the map
+    // rim and the first real hill, spanning a quarter of the overview frame.
+    // No albedo change can fix missing geometry. Spacing in that band is now
+    // 2 to 8 units, which is what lets `distantRelief`'s foothill layer show up
+    // at all.
+    //
+    // The mountain band needs its own answer. Its `fine` layer runs at 0.0150,
+    // a 67-unit wavelength, and the far rings used to step 25 to 32 units apart
+    // -- barely two samples per wavelength. What that undersampling produced was
+    // not a soft mountain but a handful of enormous quads: smooth, streaked grey
+    // slabs standing in the ranges, reading as broken geometry rather than as
+    // rock. Spacing out there is 15 to 18 units now.
     const rings: Array<[number, number]> = [
-      [1.00, 0.00], [1.06, 0.00], [1.16, 0.12], [1.32, 0.38],
-      [1.58, 0.68], [1.95, 0.88], [2.45, 1.00], [3.05, 1.00],
-      [3.70, 1.00], [4.35, 1.00], [5.05, 1.00], [5.75, 1.00],
-      [6.20, 1.00], [6.60, 1.00],
+      [1.00, 0.00], [1.05, 0.00], [1.12, 0.04], [1.20, 0.10],
+      [1.30, 0.18], [1.42, 0.28], [1.56, 0.40], [1.72, 0.52],
+      [1.90, 0.64], [2.10, 0.76], [2.35, 0.86], [2.65, 0.94],
+      [3.00, 1.00], [3.33, 1.00], [3.66, 1.00], [4.00, 1.00],
+      [4.35, 1.00], [4.72, 1.00], [5.10, 1.00], [5.50, 1.00],
+      [5.90, 1.00], [6.30, 1.00], [6.60, 1.00],
     ];
 
     // Border of the plane, walked once in order.
@@ -368,6 +388,19 @@ export class Terrain {
       }
     }
 
+    // Winding matters, and it was wrong for as long as the apron has existed.
+    //
+    // The border loop runs counter-clockwise in the (x, z) plane, which is
+    // *clockwise* seen from above, and the rings run outward. With that
+    // orientation the triangle (a, c, b) has (c-a) x (b-a) pointing at -Y: every
+    // triangle in the distant landscape faced down. `computeVertexNormals` duly
+    // gave the whole apron downward normals, so it was lit from underneath --
+    // which is the actual reason the ranges read as flat, unlit grey cardboard
+    // no matter what was done to their albedo -- and front-face culling threw
+    // away every slope that faced the camera, leaving the sky dome's
+    // below-horizon colour showing through as a smooth pale band above the map
+    // rim. Both of those survived several rounds of colour work because neither
+    // was a colour problem.
     for (let r = 0; r < ringCount - 1; r++) {
       for (let i = 0; i < loopCount; i++) {
         const j = (i + 1) % loopCount;
@@ -375,7 +408,7 @@ export class Terrain {
         const b = r * loopCount + j;
         const c = (r + 1) * loopCount + i;
         const d = (r + 1) * loopCount + j;
-        idx.push(a, c, b, b, c, d);
+        idx.push(a, b, c, b, d, c);
       }
     }
 
@@ -405,36 +438,77 @@ export class Terrain {
   private distantRelief(x: number, z: number): number {
     const half = this.size * 0.5;
     const r = Math.hypot(x, z);
-    const t = Math.pow(smoothstep(half * 1.10, half * 2.60, r), 1.2);
+    const t = Math.pow(smoothstep(half * 1.06, half * 2.20, r), 1.05);
     if (t <= 0) return 0;
 
-    // The floor genuinely falls away. Without this the middle distance is a
-    // shelf at map level and the eye reads it as more playfield rather than as
-    // a valley the map sits above.
-    let h = -12.0 * t;
+    // The floor falls away, but nothing like as fast as it used to.
+    //
+    // A flat -12 * t put every square metre of land between the map rim and the
+    // first mountain *below the camera's sightline over its own rim*. From the
+    // play camera at y = 22, the ray that just clears a 9-unit rim at r = 45 is
+    // down to y = 1.6 by r = 100, and the old apron sat around y = -7 there. So
+    // the eye looked straight over the rim into a hole, and what filled the hole
+    // was the sky dome's below-horizon colour: a smooth, eventless, pale sage
+    // wedge across a quarter of the frame. That band survived four rounds of
+    // albedo and haze work for the obvious reason -- it was never terrain, and
+    // no terrain shader change could reach it.
+    //
+    // The near band now drops only 4.5, which is still plainly a step down from
+    // the playfield, and the remaining depth is spent further out where it buys
+    // recession instead of a void.
+    let h = -4.5 * t - 8.0 * Math.pow(smoothstep(half * 2.4, half * 5.0, r), 1.2);
 
     // Forested foothills. The band between the map rim and the far range was a
     // smooth empty wash covering about a quarter of the overview frame; a
     // second layer of green ridges at roughly rim height is what turns "map,
     // then nothing, then mountains" into a landscape that recedes in steps.
-    const hillBand = smoothstep(half * 1.0, half * 1.8, r)
+    //
+    // Two frequencies, and both far higher than the single 0.0175 band this
+    // used to carry. At 0.0175 the ridge wavelength is about 57 units, so
+    // across the 45-to-130 band the player actually looks at there was room
+    // for barely one crest -- which is why that band read as a wash no matter
+    // what colour it was painted. 0.031 gives roughly three crests over the
+    // same span and 0.068 breaks each of those into spurs, so the near band
+    // has silhouette events at the scale the eye is looking for.
+    // The ramp-in is wide on purpose. A tight one put the layer's full 25-unit
+    // amplitude within a few metres of the rim, which is a wall at the exact
+    // radius the play camera looks straight at, complete with near-vertical
+    // flanks. Spread over half*1.04 to half*1.55 the band rises as the land
+    // recedes, which is the shape a range of foothills actually has.
+    const hillBand = smoothstep(half * 1.04, half * 1.55, r)
                    * (1 - smoothstep(half * 3.2, half * 5.0, r));
-    const hills = ridged2(x * 0.0175, z * 0.0175, this.seed + 707, 3);
-    h += hillBand * (2.0 + 26.0 * Math.pow(hills, 1.5));
+    const hills = ridged2(x * 0.031, z * 0.031, this.seed + 707, 3);
+    const spurs = ridged2(x * 0.068, z * 0.068, this.seed + 711, 2);
+    // The constant term matters as much as the noise: it is what guarantees the
+    // band clears the rim's sightline everywhere, so the recession never breaks
+    // open into sky-dome again in a saddle where the noise happens to be low.
+    h += hillBand * (4.0 + 15.0 * Math.pow(hills, 1.4) + 5.0 * Math.pow(spurs, 2.2));
 
-    const mtn = Math.pow(smoothstep(half * 2.2, half * 5.0, r), 1.15);
+    const mtn = Math.pow(smoothstep(half * 2.5, half * 5.2, r), 1.15);
 
     // Two octaves, not four. Four gives a dozen small crossings on the skyline
     // that stack up as torn paper; two gives two or three real ranges with
     // saddles between them, which is what actually reads as distance.
+    // Densifying the apron's far rings resolved the `fine` band that used to
+    // fall between samples, and the skyline promptly turned into the torn
+    // paper this comment warns about: a dozen small crossings at roughly one
+    // scale. Its weight comes down and its power goes up, so it now only puts
+    // spurs on the shoulders of the coarse masses instead of competing with
+    // them for the skyline.
     const coarse = ridged2(x * 0.0052, z * 0.0052, this.seed + 301, 2);
     const fine = ridged2(x * 0.0150, z * 0.0150, this.seed + 617, 2);
-    const peaks = Math.pow(coarse, 1.8) * 0.85 + Math.pow(fine, 2.4) * 0.15;
+    const peaks = Math.pow(coarse, 1.65) * 0.92 + Math.pow(fine, 3.2) * 0.08;
 
     // Sized against the play camera: from 22 units up, the tallest crest lands
     // about two degrees above the horizon. Any bigger and the range stops being
     // a backdrop and starts being the subject of the shot.
-    return h + mtn * 54.0 * peaks;
+    //
+    // 54 was set while the apron was still inside out, i.e. against ranges the
+    // renderer was throwing most of away. Lit and solid they read far heavier
+    // than they measured, and at 54 they close the sky down to a strip across
+    // the top of the overview. 42 puts the horizon back where a tower-defense
+    // map wants it, with air above the skyline.
+    return h + mtn * 42.0 * peaks;
   }
 
   /* --------------------------------------------------------------- sampling */

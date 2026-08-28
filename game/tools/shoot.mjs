@@ -34,6 +34,15 @@ export const SHOTS = {
   // Showcase shots (use --url .../showcase.html).
   lineup:    { position: [0, 2.6, 12],  target: [0, 1.1, 0],  fov: 42, advance: 2.5 },
   portrait:  { position: [0, 1.5, 4.2], target: [0, 0.9, 0],  fov: 30, advance: 2.5 },
+  // Same eye as `overview`, long lens. The band between the map rim and the
+  // first range is four percent of the overview frame and decides whether the
+  // landscape recedes in steps or in one jump; at 46 degrees it is too small to
+  // judge and too small to debug.
+  horizon:   { position: [0, 22, 52],   target: [0, 6, -60],  fov: 14, advance: 2.0 },
+  // The whole world, apron included, from outside it. Nothing a player ever
+  // sees -- this exists so a hole in the land is visible as a hole rather than
+  // as a mysterious pale band on the horizon of a shot taken from inside it.
+  world:     { position: [0, 330, 120],  target: [0, 0, -30],  fov: 78, advance: 2.0 },
   // Mid-combat: far enough into a wave that projectiles and impacts are live.
   combat:    { position: [-6, 9, 16],   target: [-4, 1, 0],   fov: 44, advance: 9.0 },
   // Opens the codex overlay; only meaningful with --dom.

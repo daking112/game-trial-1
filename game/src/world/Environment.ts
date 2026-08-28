@@ -85,7 +85,7 @@ export class Environment {
       midColor: '#8ac6ee',
       horizonColor: '#cfe4f1',
       horizonWarm: '#f7e2b2',
-      groundColor: '#b9bea4',
+      groundColor: '#a9bdd6',
       sunColor: '#ffd9a2',
       cloudLit: '#fff8ec',
       cloudDark: '#9db2cd',
@@ -138,7 +138,7 @@ export class Environment {
 
     /* -------------------------------------------------------- atmosphere */
     const haze = configureAerialPerspective({
-      haze: '#cfe0e8',
+      haze: '#aec7ea',
       inscatter: '#ffe3b4',
       zenith: '#a8cfec',
       groundY: -1.0,
@@ -160,7 +160,7 @@ export class Environment {
     // resolved to exactly the haze colour and no albedo or inscatter change
     // could reach them. Thinner fog lets the ranges keep some of their own
     // value and hue, which is what lets them separate from each other.
-    scene.fog = new THREE.FogExp2(0xffffff, 0.0072);
+    scene.fog = new THREE.FogExp2(0xffffff, 0.0088);
     scene.fog.color.copy(haze);
   }
 

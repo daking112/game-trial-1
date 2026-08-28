@@ -41,13 +41,26 @@ export const GROUND_PALETTE_GLSL = /* glsl */ `
 // midground; a tower defense wants the opposite -- ground second only to sky,
 // with the track cutting a dark line through it. DEEP stays low so thicket
 // still reads against meadow.
-const vec3 GRASS_DEEP = vec3(0.062, 0.104, 0.042);
-const vec3 GRASS_MID  = vec3(0.150, 0.240, 0.082);
-const vec3 GRASS_LIT  = vec3(0.290, 0.400, 0.130);
-const vec3 GRASS_DRY  = vec3(0.340, 0.306, 0.140);
+// Measured on the playfield before this: open ground rgb(86,94,59) at the top
+// of its range and rgb(35,65,51) in the thicket, with the whole playfield band
+// at 0.357 luma -- the darkest plane in a frame whose brief asks for bright,
+// saturated and high-key. Every layer comes up by about a quarter. DEEP stays
+// well below MID so thicket still reads against meadow, and DRY loses most of
+// its yellow: at 0.340/0.306/0.140 it was the khaki that made the open ground
+// read as mud rather than as meadow.
+const vec3 GRASS_DEEP = vec3(0.082, 0.136, 0.054);
+const vec3 GRASS_MID  = vec3(0.196, 0.310, 0.104);
+const vec3 GRASS_LIT  = vec3(0.362, 0.488, 0.160);
+const vec3 GRASS_DRY  = vec3(0.372, 0.356, 0.168);
 // The road is a gameplay affordance before it is a surface: it has to read as a
 // separate, lighter, warmer band from any camera angle, so the dirt ramp sits
 // deliberately above the grass in value rather than beside it.
+// Held where it was while the grass came up. The track has to be traceable at
+// a glance from the default camera, and it was separating from the grass almost
+// entirely by saturation -- luma 0.234 against 0.225 to 0.285 for the ground
+// beside it. Lifting the grass and leaving the dirt alone converts that into a
+// value difference, which is the one that survives being looked at from
+// fifty metres up.
 const vec3 DIRT_DARK  = vec3(0.074, 0.053, 0.034);
 const vec3 DIRT_MID   = vec3(0.152, 0.112, 0.070);
 const vec3 DIRT_LIT   = vec3(0.248, 0.198, 0.134);
@@ -56,8 +69,14 @@ const vec3 ROCK_LIT   = vec3(0.132, 0.130, 0.124);
 // Mass tone for land past ~100 units. Distant hillsides do not show grass, dirt
 // and rock as separate materials; they show one cool aggregate, and painting
 // them as if they did is what makes a far ridge read as a near one.
-const vec3 FAR_FOREST = vec3(0.074, 0.104, 0.082);
-const vec3 FAR_ROCK   = vec3(0.196, 0.212, 0.248);
+// These sit high for albedos. The ranges are back-lit from azimuth 194, so the
+// slopes the camera sees carry almost no N.L and nearly everything they return
+// to the eye comes through the ambient and IBL terms -- which scale with
+// albedo. A far-forest authored at a plausible 0.10 luma leaves the whole
+// distant third of the frame at the same value as the playfield, and a
+// four-plane composition reads as two.
+const vec3 FAR_FOREST = vec3(0.268, 0.330, 0.252);
+const vec3 FAR_ROCK   = vec3(0.360, 0.386, 0.470);
 `;
 
 export interface TerrainMaterialOptions {
@@ -65,6 +84,8 @@ export interface TerrainMaterialOptions {
   roadInner?: number;
   /** Distance at which the worn scuff has faded fully back to grass. */
   roadOuter?: number;
+  /** Half-width of the playable square, so the shader can tell map from apron. */
+  mapHalf?: number;
 }
 
 /**
@@ -77,6 +98,7 @@ export interface TerrainMaterialOptions {
 export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.MeshStandardMaterial {
   const roadInner = opts.roadInner ?? 1.6;
   const roadOuter = opts.roadOuter ?? 4.2;
+  const mapHalf = opts.mapHalf ?? 40;
 
   const mat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
@@ -127,6 +149,24 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
 
         const float ROAD_INNER = ${roadInner.toFixed(3)};
         const float ROAD_OUTER = ${roadOuter.toFixed(3)};
+        const float INV_MAP_HALF = ${(1 / mapHalf).toFixed(6)};
+
+        /**
+         * Where this pixel is relative to the playable square: below 1 inside
+         * the map, exactly 1 on its boundary, above 1 on the apron.
+         *
+         * The same squircle the terrain's framing rim is built from, so the two
+         * agree by construction. Every "is this map or is this backdrop"
+         * decision keys off it. A plain radius cannot do the job: the map is
+         * square, so its corners sit at r = 1.41 * half while its edge midpoints
+         * sit at r = half, and any radial threshold either bites into the
+         * corners of the playfield or leaves a band of apron untreated.
+         */
+        float gMapT(vec2 w) {
+          vec2 q = abs(w) * INV_MAP_HALF;
+          vec2 q4 = q * q * q * q;
+          return pow(q4.x + q4.y, 0.25);
+        }
 
         // Height field for the per-pixel normal. Clump scale carries the read;
         // the finer bands only survive close to camera.
@@ -144,6 +184,9 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
         {
           vec2 w = vGw.xz;
           float viewDist = length(vGw - cameraPosition);
+          // Map-relative position, not view distance, so the same patch of
+          // ground is painted the same way from every camera.
+          float mapT = gMapT(w);
 
           // Hand-rolled mip: fade each detail band back to its own mean as it
           // recedes, so nothing below a pixel is left to alias.
@@ -179,6 +222,17 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           float rockM  = smoothstep(0.34, 0.60, slopeN);
           float scree  = smoothstep(0.19, 0.38, slopeN) * (1.0 - rockM);
 
+          // Past the rim these are forested foothills, not quarries. The local
+          // rock layer is a neutral dark grey authored for outcrops seen from
+          // three metres away; on a back-lit foothill flank a hundred metres out
+          // it renders as a smooth grey slab pasted into the greenery, and it
+          // measured rgb(83, 90, 91) -- the flattest, most colourless thing in
+          // the frame. Rock on the apron is the far palette's job, and that one
+          // is a cool blue-grey that belongs to the distance.
+          float apron = smoothstep(1.00, 1.26, mapT);
+          rockM *= 1.0 - apron * 0.94;
+          scree *= 1.0 - apron * 0.80;
+
           // Worn earth beside the path. The boundary is pushed around by a
           // metre-scale noise so it never reads as a constant-width buffer.
           float roadD = vGRoad + (gnFbm2(w * 0.30) - 0.5) * 1.9 + (clump - 0.5) * 0.7;
@@ -187,7 +241,15 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
 
           // Large dry/bare regions on the flats, so open ground is not one flat
           // green field.
+          //
+          // Confined to the playfield. The macro field that scatters these runs
+          // at a 32 m wavelength, so on the apron -- seen at a grazing angle,
+          // where 32 m of ground compresses into a few pixels of screen -- one
+          // region would cover the whole visible band and paint it a single flat
+          // khaki. A texture idea that works underfoot is not automatically one
+          // that works at two hundred metres.
           float bareM = smoothstep(0.62, 0.82, macro * 0.72 + meso * 0.28);
+          bareM *= 1.0 - smoothstep(0.94, 1.30, mapT);
 
           float dirtM = clamp(max(max(scree, roadCore), max(bareM * 0.55, roadScuff * 0.45)), 0.0, 1.0);
 
@@ -240,20 +302,46 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
           // Collapse to mass tone with distance. Without this the apron's
           // ridgelines carry the same grass/rock mottling as the ground under
           // the player's feet, and the eye reads them as nearby hillocks.
-          float farBlend = smoothstep(105.0, 265.0, viewDist);
-          vec3 farTone = mix(FAR_FOREST, FAR_ROCK, smoothstep(0.28, 0.66, slope));
+          // Keyed off *world radius*, not view distance. View distance makes the
+          // far corner of the playfield collapse to mass tone the moment the
+          // camera pulls back, which costs track readability for nothing.
+          //
+          // Starts at the rim and nowhere before it. Because the metric is the
+          // map's own squircle rather than a radius, this is exactly zero over
+          // every square metre of playfield -- corners included -- and picks up
+          // the moment the ground stops being playable. The radius version had
+          // to be held back to r = 56 to protect the corners, which left the
+          // whole first band of apron painted in the playfield's palette.
+          //
+          // And it completes fast. A ramp that took until mapT = 2.3 left the
+          // first thirty metres of apron -- the flank the player looks straight
+          // at -- painted with the playfield's own neutral grey rock, which is
+          // what those smooth streaked slabs standing in the foothills actually
+          // were. Everything past the rim is backdrop; there is no reason for it
+          // to spend twenty metres pretending otherwise.
+          float farBlend = smoothstep(1.02, 1.55, mapT);
+
+          // Slope alone picks the far layer, and a big mountain face has one
+          // slope over its whole area -- so it resolved to one flat grey plane,
+          // the single ugliest thing in the low shot. A 90 m noise band pushed
+          // into the threshold breaks that face into treed shoulders and bare
+          // rock. It is deliberately coarse: anything finer is below a pixel at
+          // the distance these surfaces are seen from, and would only alias.
+          float farBreak = gnFbm3(w * 0.011 + vec2(17.0, -5.0));
+          vec3 farTone = mix(FAR_FOREST, FAR_ROCK,
+                             smoothstep(0.24, 0.62, slope + (farBreak - 0.5) * 0.36));
 
           // Separate the ranges by hue, not only by value. Four ridges sharing
           // one blue-grey differ solely in brightness, and the eye stacks them
           // as flat paper. Nearer land keeps a warm green cast; each range
           // further out is pushed cooler and bluer, so depth survives even
           // where two ridges happen to meet at the same luminance.
-          float depthBand = smoothstep(110.0, 320.0, viewDist);
+          float depthBand = smoothstep(1.90, 6.20, mapT);
           farTone = mix(farTone * vec3(1.10, 1.06, 0.88),
                         farTone * vec3(0.86, 0.94, 1.22), depthBand);
-          // Not all the way: leaving a fifth of the local albedo means the key
+          // Not all the way: leaving a sixth of the local albedo means the key
           // still models the far peaks instead of flattening them to one value.
-          col = mix(col, farTone, farBlend * 0.80);
+          col = mix(col, farTone, farBlend * 0.84);
 
           col *= cloudShadow(vGw);
 
@@ -279,7 +367,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
       );
   };
 
-  mat.customProgramCacheKey = () => `terrain-ground-${roadInner}-${roadOuter}-${cloudShadowKey()}`;
+  mat.customProgramCacheKey = () => `terrain-ground-${roadInner}-${roadOuter}-${mapHalf}-${cloudShadowKey()}`;
   return mat;
 }
 
