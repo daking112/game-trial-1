@@ -76,3 +76,39 @@ Warm key light, cool sky fill; that split is what makes forms read.
 The terrain currently reads as muddy brown with acid-green blotches. That is a
 known weakness and fair game to fix if it is in your scope.
 REFS_DIR = /tmp/claude-0/-home-user-game-trial-1/6192ecc6-a18d-5224-9b2f-67e084e1b23d/scratchpad/refs
+
+---
+
+# Phase 2 — meta game
+
+The battle layer is done and works: terrain, foliage, six creatures with
+evolution, ten waves, upgrades, codex, win/loss, audio, VFX. Phase 2 wraps a
+meta game around it.
+
+## Ownership map — do not edit outside your slice
+
+| Slice | Owner | Files |
+|---|---|---|
+| Multiplayer | agent | `server/**` (new), `src/net/**` (new), `src/ui/Lobby.ts` |
+| World map, bases, raiding | agent | `src/metamap/**` (new, includes its own UI) |
+| UI polish (in-battle) | agent | `src/ui/Hud.ts`, `CollectionPanel.ts`, `TowerPanel.ts`, `EndScreen.ts` |
+| Gacha, currency, progression | lead | `src/meta/**` |
+| Wiring | lead | `src/main.ts` |
+
+`src/main.ts` is the lead's. Export a class or factory; the lead wires it.
+
+## Shared rules, unchanged from phase 1
+
+- Everything procedural. No asset downloads, no image generation, network is
+  GitHub-only.
+- `npx tsc -b --noEmit` must exit clean.
+- Deterministic: seed all randomness. Screenshots must be reproducible.
+- Screenshot with `tools/shoot.mjs` (add `--dom true` for HTML overlays), then
+  **open the PNG with the Read tool**. Never assess work you have not viewed.
+- `tools/analyse.mjs <png>` measures luma/saturation per band — check value
+  claims against pixels.
+- `tools/simulate.mjs` must still pass after your change.
+- The game boots to a clean board. `?demo=1` seeds towers and starts a wave;
+  the tools append it themselves.
+- Commit after EVERY round. Rate limits terminate agents without warning and
+  uncommitted work is lost.
