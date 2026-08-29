@@ -614,6 +614,64 @@ engine.start();
   };
 (window as unknown as { __collection: Collection }).__collection = collection;
 
+/**
+ * Test hook: what fraction of the track the player can actually see.
+ *
+ * The brief's readability bar is Bloons TD 6, where the path reads at a
+ * glance. Whether the forest has grown over it is a measurable question, not
+ * a matter of impression, so this raycasts from the current camera to points
+ * along the track and reports how many arrive.
+ */
+(window as unknown as { __trackVisibility: (samples?: number) => unknown }).__trackVisibility =
+  (samples = 300) => {
+    const ray = new THREE.Raycaster();
+    ray.far = 400;
+    const target = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    let visible = 0;
+    let considered = 0;
+    const occluders: Record<string, number> = {};
+
+    for (let i = 0; i < samples; i++) {
+      track.curve.getPoint(i / samples, target);
+      // Aim just above the surface: the track ribbon itself is what must read.
+      target.y += 0.12;
+      dir.copy(target).sub(engine.camera.position);
+      const dist = dir.length();
+      dir.normalize();
+
+      // Only count track that is on screen at all; occlusion is not the same
+      // question as framing, and mixing them would hide either problem.
+      const ndc = target.clone().project(engine.camera);
+      if (ndc.z > 1 || Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) continue;
+      considered++;
+
+      ray.set(engine.camera.position, dir);
+      const hits = ray.intersectObjects(engine.scene.children, true);
+      // A hit meaningfully in front of the sample point is something standing
+      // between the camera and the road.
+      const blocker = hits.find((h) => h.distance < dist - 0.35 && h.object.visible);
+      if (!blocker) visible++;
+      else {
+        // Naming the occluder matters more than counting it. Widening the
+        // treeline moved this number by half a percent, because the trees
+        // were never what stood in the way.
+        let label = blocker.object.name || blocker.object.type;
+        for (let o: THREE.Object3D | null = blocker.object; o; o = o.parent) {
+          if (o.name) { label = o.name; break; }
+        }
+        occluders[label] = (occluders[label] ?? 0) + 1;
+      }
+    }
+
+    return {
+      onScreen: considered,
+      visible,
+      fraction: considered > 0 ? visible / considered : 0,
+      occluders: Object.entries(occluders).sort((a, b) => b[1] - a[1]).slice(0, 6),
+    };
+  };
+
 // Test hook: force a terminal phase so the end screen can be captured.
 (window as unknown as { __forceEnd: (won: boolean) => void }).__forceEnd = (won: boolean) => {
   battle.lives = won ? battle.lives : 0;

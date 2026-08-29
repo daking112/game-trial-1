@@ -259,12 +259,14 @@ export class Foliage {
       const [h0, h1] = SPECIES_HEIGHT[kind];
       const height = range(this.rnd, h0, h1) * scaleBias;
       const canopy = variants[vi].built.radius * height;
-      // Trunks stay well clear of the road; canopies are allowed to lean in a
-      // little, which is what stops the treeline looking like a hedge.
-      // Wide enough that the canopy never overhangs the road. In a tower
-      // defense the player must be able to read the whole path at a glance;
-      // an occluded lane is a lost run they cannot see coming.
-      const clear = 5.4 + canopy * 0.16;
+      // Clearance is measured to the canopy EDGE, not to the trunk. The old
+      // rule counted a sixteenth of the canopy radius, which let a wide crown
+      // sit almost entirely over the road while the comment above it claimed
+      // the opposite -- measured with tools/measure-track.mjs, 36% of the road
+      // was under canopy seen from directly overhead. In a tower defense the
+      // player must read the whole path at a glance; an occluded lane is a
+      // lost run they never saw coming.
+      const clear = 4.6 + canopy * 0.95;
       if (path.distance(x, z, clear + 1) < clear) return false;
       if (slopeAt(x, z) > 0.62) return false;
       if (trees.blocked(x, z, canopy, 0.52)) return false;
