@@ -28,6 +28,10 @@ export class Hud {
   private readonly goldEl: HTMLSpanElement;
   private readonly waveEl: HTMLSpanElement;
   private readonly bannerEl: HTMLDivElement;
+  private readonly waveBar: HTMLDivElement;
+  private readonly waveName: HTMLSpanElement;
+  private readonly waveCount: HTMLSpanElement;
+  private readonly waveFill: HTMLElement;
   private readonly startBtn: HTMLButtonElement;
   private readonly speedBtn: HTMLButtonElement;
   private readonly cards = new Map<string, HTMLButtonElement>();
@@ -43,6 +47,13 @@ export class Hud {
         <div class="stat stat-lives"><span class="stat-icon">&#9829;</span><span class="stat-val" data-lives>40</span></div>
         <div class="stat stat-gold"><span class="stat-icon">&#9679;</span><span class="stat-val" data-gold>120</span></div>
         <div class="stat stat-wave"><span class="stat-label">WAVE</span><span class="stat-val" data-wave>0</span></div>
+        <div class="wavebar" data-wavebar hidden>
+          <div class="wavebar-head">
+            <span class="wavebar-name" data-wavename></span>
+            <span class="wavebar-count" data-wavecount></span>
+          </div>
+          <div class="wavebar-track"><i data-wavefill></i></div>
+        </div>
       </div>
       <div class="hud-banner" data-banner></div>
       <div class="hud-bottom">
@@ -60,6 +71,10 @@ export class Hud {
     this.goldEl = this.root.querySelector('[data-gold]')!;
     this.waveEl = this.root.querySelector('[data-wave]')!;
     this.bannerEl = this.root.querySelector('[data-banner]')!;
+    this.waveBar = this.root.querySelector('[data-wavebar]')!;
+    this.waveName = this.root.querySelector('[data-wavename]')!;
+    this.waveCount = this.root.querySelector('[data-wavecount]')!;
+    this.waveFill = this.root.querySelector('[data-wavefill]')!;
     this.startBtn = this.root.querySelector('[data-start]')!;
     this.speedBtn = this.root.querySelector('[data-speed]')!;
 
@@ -119,6 +134,42 @@ export class Hud {
     this.waveEl.textContent = String(wave);
   }
 
+  /**
+   * Wave progress. Optional -- the HUD is correct if this is never called.
+   *
+   * A tower-defence player needs to know how much of the wave is left before
+   * deciding whether to spend, and the game only told them the wave NUMBER.
+   * "Wave 4" says nothing about whether four more enemies are coming or forty.
+   *
+   * Between waves this becomes the countdown to the next one, because the
+   * same strip answers the same question in both states: how long have I got.
+   */
+  setWaveProgress(p: {
+    spawned: number; total: number; alive: number;
+    fraction: number; name: string; isBoss: boolean; nextIn: number | null;
+  } | null) {
+    if (!p || (p.total === 0 && p.nextIn === null)) {
+      this.waveBar.hidden = true;
+      return;
+    }
+    this.waveBar.hidden = false;
+    this.waveBar.classList.toggle('is-boss', p.isBoss);
+
+    if (p.nextIn !== null) {
+      this.waveName.textContent = 'Next wave';
+      this.waveCount.textContent = `${p.nextIn.toFixed(1)}s`;
+      this.waveFill.style.width = '100%';
+      this.waveBar.classList.add('is-waiting');
+      return;
+    }
+    this.waveBar.classList.remove('is-waiting');
+    this.waveName.textContent = p.isBoss ? `\u2620 ${p.name}` : p.name;
+    // Standing enemies, not spawn count: what is still on the track is the
+    // number the player is actually deciding against.
+    this.waveCount.textContent = `${p.alive} left`;
+    this.waveFill.style.width = `${Math.round(p.fraction * 100)}%`;
+  }
+
   setWaveButton(enabled: boolean, label: string) {
     this.startBtn.disabled = !enabled;
     this.startBtn.textContent = label;
@@ -173,6 +224,39 @@ export class Hud {
       .stat-label { font-size: 11px; opacity: .62; letter-spacing: 1.4px; }
       .stat-val { font-variant-numeric: tabular-nums; }
 
+      .wavebar {
+        min-width: 190px; padding: 7px 12px 8px; border-radius: 14px;
+        background: rgba(8,13,20,.72); backdrop-filter: blur(6px);
+        border: 1px solid rgba(255,255,255,.1);
+        display: grid; gap: 5px; align-content: center;
+      }
+      .wavebar[hidden] { display: none; }
+      .wavebar-head { display: flex; align-items: baseline; gap: 8px; }
+      .wavebar-name {
+        font-size: 11.5px; font-weight: 800; color: #dce9f7;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .wavebar-count {
+        margin-left: auto; font-size: 11px; font-weight: 800; color: #8fa6bd; white-space: nowrap;
+      }
+      .wavebar-track {
+        height: 6px; border-radius: 999px; background: rgba(0,0,0,.5);
+        overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.5);
+      }
+      .wavebar-track i {
+        display: block; height: 100%; border-radius: 999px; width: 0%;
+        background: linear-gradient(90deg, #57b4f0, #9fe8ff);
+        transition: width .22s linear;
+      }
+      /* A boss wave has to announce itself before it arrives, not once it is
+         already halfway down the track. */
+      .wavebar.is-boss { border-color: rgba(255,122,77,.62); }
+      .wavebar.is-boss .wavebar-name { color: #ffb08a; }
+      .wavebar.is-boss .wavebar-track i { background: linear-gradient(90deg, #ff7a4d, #ffd76e); }
+      .wavebar.is-waiting .wavebar-track i { background: linear-gradient(90deg, #6fd08c, #b8f5cd); }
+      @media (max-width: 760px) {
+        .wavebar { min-width: 0; flex: 1; }
+      }
       .hud-banner {
         align-self: center; margin-top: 6vh;
         padding: 12px 34px; border-radius: 14px; font-size: 26px; font-weight: 900;
@@ -258,7 +342,40 @@ export class Hud {
         .controls .btn { flex: 1; padding: 12px 10px; font-size: 14px; }
         .hud-top { padding: 10px; gap: 7px; }
         .stat { padding: 6px 12px; font-size: 15px; }
-        .hud-banner { font-size: 19px; padding: 10px 20px; margin-top: 4vh; }
+        .wavebar {
+        min-width: 190px; padding: 7px 12px 8px; border-radius: 14px;
+        background: rgba(8,13,20,.72); backdrop-filter: blur(6px);
+        border: 1px solid rgba(255,255,255,.1);
+        display: grid; gap: 5px; align-content: center;
+      }
+      .wavebar[hidden] { display: none; }
+      .wavebar-head { display: flex; align-items: baseline; gap: 8px; }
+      .wavebar-name {
+        font-size: 11.5px; font-weight: 800; color: #dce9f7;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .wavebar-count {
+        margin-left: auto; font-size: 11px; font-weight: 800; color: #8fa6bd; white-space: nowrap;
+      }
+      .wavebar-track {
+        height: 6px; border-radius: 999px; background: rgba(0,0,0,.5);
+        overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.5);
+      }
+      .wavebar-track i {
+        display: block; height: 100%; border-radius: 999px; width: 0%;
+        background: linear-gradient(90deg, #57b4f0, #9fe8ff);
+        transition: width .22s linear;
+      }
+      /* A boss wave has to announce itself before it arrives, not once it is
+         already halfway down the track. */
+      .wavebar.is-boss { border-color: rgba(255,122,77,.62); }
+      .wavebar.is-boss .wavebar-name { color: #ffb08a; }
+      .wavebar.is-boss .wavebar-track i { background: linear-gradient(90deg, #ff7a4d, #ffd76e); }
+      .wavebar.is-waiting .wavebar-track i { background: linear-gradient(90deg, #6fd08c, #b8f5cd); }
+      @media (max-width: 760px) {
+        .wavebar { min-width: 0; flex: 1; }
+      }
+      .hud-banner { font-size: 19px; padding: 10px 20px; margin-top: 4vh; }
       }
     `;
     document.head.appendChild(style);

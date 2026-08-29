@@ -558,6 +558,7 @@ engine.onUpdate((dt, elapsed) => {
   summon.update(dt);
   endScreen.update(dt);
   hud.setStats(battle.lives, battle.gold, battle.waveIndex);
+  hud.setWaveProgress(battle.waveProgress);
   hud.setAffordable(COSTS, battle.gold);
   towerPanel.refresh(battle.gold);
   const running = battle.phase === 'running';

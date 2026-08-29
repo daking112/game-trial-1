@@ -153,6 +153,48 @@ export class Battle {
   private waveClock = 0;
   private seed = 0;
   private betweenWaves = 0;
+
+  /**
+   * How far through the current wave the player is.
+   *
+   * The UI cannot read the schedule directly -- it is private, and the shape
+   * of a spawn schedule is not something a HUD should know about. This is the
+   * question the HUD actually asks: how much of this wave has been sent, how
+   * much is still standing, and is the thing at the end of it a boss.
+   *
+   * `spawned` counts what has left the gate, so it includes enemies already
+   * killed; `alive` is what is still on the track. Progress is the pair, not
+   * either alone: a wave can be fully spawned and far from over.
+   */
+  get waveProgress(): {
+    spawned: number;
+    total: number;
+    alive: number;
+    /** 0..1 over the whole wave, spawning and clearing together. */
+    fraction: number;
+    name: string;
+    isBoss: boolean;
+    /** Seconds until the next wave starts, or null when one is running. */
+    nextIn: number | null;
+  } {
+    const wave = WAVES[this.waveIndex - 1];
+    const total = this.schedule.length;
+    const spawned = Math.min(this.scheduleCursor, total);
+    const alive = this.enemies.length;
+    // Half the bar is spawning, half is clearing what was spawned. Measuring
+    // spawn alone would show a full bar while a boss still walks the track.
+    const sent = total > 0 ? spawned / total : 0;
+    const cleared = spawned > 0 ? Math.max(0, spawned - alive) / spawned : 0;
+    return {
+      spawned,
+      total,
+      alive,
+      fraction: Math.max(0, Math.min(1, sent * 0.5 + cleared * 0.5)),
+      name: wave?.name ?? '',
+      isBoss: wave?.boss === true,
+      nextIn: this.phase === 'idle' && this.betweenWaves > 0 ? this.betweenWaves : null,
+    };
+  }
   private ownsParticles = false;
   private readonly trail = (at: THREE.Vector3, color: THREE.ColorRepresentation) =>
     playTrail(this.particles, at, color);
