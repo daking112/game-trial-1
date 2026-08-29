@@ -1,4 +1,6 @@
 import { SPECIES, type Rarity } from '../creatures/species';
+
+const RARITY_ORDER: Rarity[] = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
 import { Gacha, SUMMON_COST, MULTI_COST, publishedOdds, type SummonResult } from '../meta/Gacha';
 import { buildPortraits, creaturePortrait } from './StarPanel';
 
@@ -97,18 +99,19 @@ export class SummonPanel {
         <div class="sm-stage" data-stage></div>
 
         <div class="sm-actions">
-          <button class="sm-btn" data-one type="button" ${this.gacha.canAfford(1) ? '' : 'disabled'}>
-            Summon <b>${SUMMON_COST}</b>
-          </button>
           <button class="sm-btn sm-btn-multi" data-ten type="button" ${this.gacha.canAfford(10) ? '' : 'disabled'}>
-            Summon &times;10 <b>${MULTI_COST}</b>
+            <span class="sm-btn-label">Summon &times;10</span>
+            <span class="sm-btn-cost">&#9881; ${MULTI_COST.toLocaleString()}</span>
+          </button>
+          <button class="sm-btn sm-btn-single" data-one type="button" ${this.gacha.canAfford(1) ? '' : 'disabled'}>
+            <span class="sm-btn-label">Summon &times;1</span>
+            <span class="sm-btn-cost">&#9881; ${SUMMON_COST}</span>
           </button>
         </div>
 
         ${this.cb.onOpenStars ? `
           <button class="sm-stars" data-stars type="button">
-            Star Ranks
-            ${ready > 0 ? `<span class="sm-badge">${ready}</span>` : ''}
+            Star Ranks${ready > 0 ? ` <span class="sm-badge">${ready} ready</span>` : ''}
           </button>
         ` : ''}
 
@@ -117,9 +120,12 @@ export class SummonPanel {
           ${odds.map((o) => `<span class="sm-odd" style="--c:${RARITY_COLOR[o.rarity]}">${o.rarity} ${o.percent}%</span>`).join('')}
         </div>
         <p class="sm-note">
-          ${pity.rare !== null ? `Guaranteed Rare or better within <b>${pity.rare}</b> more.` : ''}
-          A ten-summon always contains at least one Rare. Pity raises these rates;
-          it never lowers them. Cogs are earned by playing and cannot be purchased.
+          A ten-summon always contains at least one Rare${
+            pity.rare !== null && pity.rare < 10
+              ? `, and a Rare or better is guaranteed within <b>${pity.rare}</b> single summons`
+              : ''
+          }. Pity raises these rates; it never lowers them.
+          Cogs are earned by playing and cannot be purchased.
         </p>
       </div>
     `;
@@ -143,19 +149,40 @@ export class SummonPanel {
     // The reveal is the best moment in the loop, so it shows the actual
     // creature rather than a coloured ball standing in for one.
     buildPortraits(shown.map((r) => r.speciesId));
-    stage.innerHTML = `<div class="sm-grid">${shown.map((r) => {
-      const sp = SPECIES[r.speciesId];
+
+    // Duplicates stack instead of tiling. Six identical commons drawn six
+    // times made the least interesting fact in the pull the loudest thing on
+    // the screen, and pushed the rare -- the reason anyone pressed the button
+    // -- to the same visual weight as the sixth copy of a starter.
+    const stacks: Array<{ r: SummonResult; count: number; shards: number; isNew: boolean }> = [];
+    const byId = new Map<string, number>();
+    for (const r of shown) {
+      const at = byId.get(r.speciesId);
+      if (at === undefined) {
+        byId.set(r.speciesId, stacks.length);
+        stacks.push({ r, count: 1, shards: r.shards, isNew: r.isNew });
+      } else {
+        const st = stacks[at];
+        st.count++;
+        st.shards += r.shards;
+        st.isNew = st.isNew || r.isNew;
+      }
+    }
+
+    stage.innerHTML = `<div class="sm-grid">${stacks.map((st) => {
+      const sp = SPECIES[st.r.speciesId];
+      const portrait = creaturePortrait(st.r.speciesId);
+      // Rarity buys presentation, not just a border colour. A Rare takes two
+      // columns and a lit frame so the eye lands on it first.
+      const big = RARITY_ORDER.indexOf(st.r.rarity) >= RARITY_ORDER.indexOf('Rare');
       return `
-        <div class="sm-card ${r.isNew ? 'is-new' : ''}" style="--c:${RARITY_COLOR[r.rarity]};--a:${sp.palette.primary};--b:${sp.palette.secondary}">
-          <span class="sm-orb">${
-            creaturePortrait(r.speciesId)
-              ? `<img src="${creaturePortrait(r.speciesId)}" alt="" draggable="false">`
-              : ''
-          }</span>
-          <span class="sm-name">${sp.name}</span>
-          <span class="sm-rarity">${r.rarity}</span>
-          ${r.isNew ? '<span class="sm-tag">NEW</span>'
-                    : `<span class="sm-dupe">+${r.shards} shards</span>`}
+        <div class="sm-card ${st.isNew ? 'is-new' : ''} ${big ? 'is-big' : ''}"
+             style="--c:${RARITY_COLOR[st.r.rarity]};--a:${sp.palette.primary};--b:${sp.palette.secondary}">
+          <span class="sm-orb">${portrait ? `<img src="${portrait}" alt="" draggable="false">` : ''}</span>
+          <span class="sm-name">${sp.name}${st.count > 1 ? `<b class="sm-mult">&times;${st.count}</b>` : ''}</span>
+          <span class="sm-rarity">${st.r.rarity}</span>
+          ${st.isNew ? '<span class="sm-tag">NEW</span>' : ''}
+          ${st.shards > 0 ? `<span class="sm-dupe"><i class="sm-shard"></i>${st.shards}</span>` : ''}
         </div>`;
     }).join('')}</div>`;
   }
@@ -173,7 +200,7 @@ export class SummonPanel {
       .summon[hidden] { display: none; }
       .summon {
         position: absolute; inset: 0; z-index: 25; pointer-events: auto;
-        background: rgba(4,8,14,.72); backdrop-filter: blur(8px);
+        background: rgba(3,6,11,.82); backdrop-filter: blur(15px);
         display: grid; place-items: center;
         font-family: ui-rounded, "Nunito", system-ui, sans-serif; color: #fff;
       }
@@ -193,17 +220,33 @@ export class SummonPanel {
         background: rgba(255,255,255,.1); border: none; color: #fff; cursor: pointer;
         width: 30px; height: 30px; border-radius: 9px; font-size: 19px; line-height: 1;
       }
+      /* One inset for the whole sheet: the grid and the buttons used to start
+         at different x, 42px apart inside a 660px dialog. */
       .sm-stage { min-height: 150px; display: grid; place-items: center; margin-bottom: 16px; }
       .sm-empty { opacity: .5; font-size: 13.5px; }
-      .sm-grid { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center; }
+      .sm-grid {
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; width: 100%;
+      }
       .sm-card {
         --c: #9fb0c0; --a: #7ad0a8;
-        position: relative; width: 104px; padding: 11px 8px 9px; border-radius: 13px;
+        position: relative; padding: 11px 8px 9px; border-radius: 13px;
         display: grid; gap: 3px; justify-items: center; text-align: center;
+        align-content: start;
         background: rgba(255,255,255,.05);
         border: 1px solid var(--c); box-shadow: 0 0 16px -6px var(--c);
         animation: sm-pop .34s cubic-bezier(.2,1.4,.4,1) both;
       }
+      /* Rarity buys size and light, not only a border colour. */
+      .sm-card.is-big {
+        grid-column: span 2;
+        border-width: 2px;
+        background:
+          radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--c) 30%, transparent), transparent 70%),
+          rgba(255,255,255,.06);
+        box-shadow: 0 0 30px -6px var(--c), inset 0 0 22px -12px var(--c);
+      }
+      .sm-card.is-big .sm-orb { width: 76px; height: 76px; }
+      .sm-card.is-big .sm-name { font-size: 14.5px; }
       @keyframes sm-pop {
         from { transform: scale(.7) translateY(10px); opacity: 0 }
         to   { transform: none; opacity: 1 }
@@ -219,26 +262,43 @@ export class SummonPanel {
       }
       .sm-orb img { width: 100%; height: 100%; object-fit: contain; }
       .sm-name { font-size: 12.5px; font-weight: 800; }
+      .sm-mult { color: #ffd35c; margin-left: 3px; }
       .sm-rarity { font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--c); font-weight: 800; }
+      /* NEW is the least valuable fact in a pull, so it stops competing with
+         the rarest card for the one colour that should mean "rare". */
       .sm-tag {
-        position: absolute; top: -7px; right: -5px; background: #ffd35c; color: #1a1206;
+        position: absolute; top: -6px; right: -4px; background: #7fd8ff; color: #06131c;
         font-size: 9px; font-weight: 900; padding: 2px 6px; border-radius: 999px;
       }
-      .sm-dupe { font-size: 10px; opacity: .62; }
-      .sm-actions { display: flex; gap: 10px; margin-bottom: 14px; }
+      .sm-shard {
+        display: inline-block; width: 7px; height: 7px; margin-right: 4px;
+        background: linear-gradient(160deg, #bfe6ff, #4aa8e8);
+        transform: rotate(45deg); border-radius: 2px;
+      }
+      .sm-dupe { font-size: 10.5px; color: #a9dcff; font-weight: 700; display: flex; align-items: center; }
+      .sm-actions { display: flex; gap: 10px; margin-bottom: 10px; }
       .sm-btn {
-        flex: 1; font: inherit; font-weight: 900; font-size: 15px; cursor: pointer; color: #08131a;
-        padding: 13px; border-radius: 13px; border: none;
-        background: linear-gradient(180deg, #a8f0c8, #56c894);
-        box-shadow: 0 5px 0 #2f8a63;
+        font: inherit; cursor: pointer; color: #08131a;
+        display: grid; gap: 1px; justify-items: center;
+        padding: 11px; border-radius: 13px; border: 2px solid rgba(0,0,0,.28);
+        background: linear-gradient(180deg, #ffe6a8, #f0b95c);
+        box-shadow: 0 6px 0 #a8763a, inset 0 1px 0 rgba(255,255,255,.65);
         transition: transform .1s ease, box-shadow .1s ease, filter .14s ease;
       }
-      .sm-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 #2f8a63; }
+      .sm-btn-label { font-size: 16px; font-weight: 900; letter-spacing: .3px; }
+      .sm-btn-cost { font-size: 11.5px; font-weight: 800; opacity: .8; }
+      .sm-btn:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 1px 0 #a8763a; }
       .sm-btn:disabled { filter: grayscale(.75) brightness(.7); cursor: default; }
-      .sm-btn-multi {
-        background: linear-gradient(180deg, #ffe6a8, #f0b95c);
-        box-shadow: 0 5px 0 #a8763a;
+      /* The ten-pull is the primary action and now looks like it: the single
+         summon is demoted to an outline rather than competing at full fill. */
+      .sm-btn-multi { flex: 3; }
+      .sm-btn-single {
+        flex: 2; color: #cfe3f5;
+        background: rgba(255,255,255,.07);
+        border-color: rgba(255,255,255,.22);
+        box-shadow: 0 5px 0 rgba(0,0,0,.34);
       }
+      .sm-btn-single:active:not(:disabled) { box-shadow: 0 1px 0 rgba(0,0,0,.34); }
       .sm-stars {
         position: relative; width: 100%; font: inherit; font-weight: 800; font-size: 13px;
         cursor: pointer; color: #ffd35c; padding: 10px; margin-bottom: 14px;
@@ -248,7 +308,7 @@ export class SummonPanel {
       .sm-stars:hover { background: rgba(255,211,92,.17); }
       .sm-badge {
         background: #ffd35c; color: #1a1206; font-size: 10px; font-weight: 900;
-        padding: 2px 7px; border-radius: 999px; margin-left: 6px;
+        padding: 2px 8px; border-radius: 999px; margin-left: 6px;
       }
       .sm-odds { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-bottom: 9px; }
       .sm-odds-label { font-size: 10.5px; letter-spacing: 1.1px; text-transform: uppercase; opacity: .5; }
@@ -259,7 +319,10 @@ export class SummonPanel {
       .sm-note { font-size: 11.5px; opacity: .58; line-height: 1.5; }
       @media (max-width: 760px) {
         .sm-sheet { padding: 14px; }
-        .sm-card { width: 88px; }
+        .sm-grid { grid-template-columns: repeat(3, 1fr); }
+        .sm-card.is-big { grid-column: span 3; }
+        .sm-rarity { font-size: 11px; }
+        .sm-dupe { font-size: 11px; }
         .sm-actions { flex-direction: column; }
       }
     `;

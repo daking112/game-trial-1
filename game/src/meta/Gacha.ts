@@ -217,10 +217,23 @@ function mulberry32(seed: number) {
 export function publishedOdds(): Array<{ rarity: Rarity; percent: number }> {
   const avail = availableRarities();
   const total = avail.reduce((sum, r) => sum + RARITY_WEIGHTS[r], 0);
-  return avail.map((r) => ({
-    rarity: r,
-    percent: +((RARITY_WEIGHTS[r] / total) * 100).toFixed(2),
-  }));
+  if (total <= 0) return [];
+
+  const exact = avail.map((r) => ({ rarity: r, value: (RARITY_WEIGHTS[r] / total) * 100 }));
+
+  // Rounded by largest remainder, so the published figures sum to exactly 100.
+  // Rounding each independently put 61.86 + 27.84 + 10.31 on screen, which is
+  // 100.01 -- a screen whose entire argument is that the odds are honest
+  // cannot show odds that do not add up.
+  const floors = exact.map((e) => ({ ...e, whole: Math.floor(e.value), rem: e.value % 1 }));
+  let left = 100 - floors.reduce((sum, f) => sum + f.whole, 0);
+  const order = [...floors].sort((a, b) => b.rem - a.rem);
+  for (const f of order) {
+    if (left <= 0) break;
+    f.whole++;
+    left--;
+  }
+  return floors.map((f) => ({ rarity: f.rarity, percent: f.whole }));
 }
 
 export class Gacha {
