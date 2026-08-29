@@ -88,7 +88,13 @@ const audio = new GameAudio();
 // The collection tracks every species, not just the summonable stage-1 ones,
 // so evolved forms are recorded in the codex when they are earned.
 const collection = new Collection(Object.keys(SPECIES));
-const gacha = new Gacha();
+// Real play seeds the summon rng from the clock, so two players do not share
+// a luck sequence. The capture harness always passes ?demo=1, and a screenshot
+// that shows different shard totals on every run cannot be compared against
+// the last one, so demo mode pins the seed instead.
+const gacha = new Gacha(
+  new URLSearchParams(location.search).has('demo') ? 0x5eed1e : undefined,
+);
 // Star ranks are the duplicate-shard sink; they multiply on top of levels.
 const stars = new Stars();
 

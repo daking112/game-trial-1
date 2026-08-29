@@ -56,7 +56,7 @@ export const SHOTS = {
   stars:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 4.0,
                before: `window.__gacha.addCogs(60000);
                         const own = new Set();
-                        for (let i = 0; i < 10; i++) {
+                        for (let i = 0; i < 4; i++) {
                           const r = window.__gacha.summon(10, own);
                           if (!r) break;
                           for (const x of r) if (x.isNew) { own.add(x.speciesId); window.__collection.markCaught(x.speciesId); }
