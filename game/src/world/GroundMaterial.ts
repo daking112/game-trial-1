@@ -345,6 +345,38 @@ export function createTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.
 
           col *= cloudShadow(vGw);
 
+          // ---- distance detail ------------------------------------------------
+          // Every procedural band above is faded out by view distance, for a
+          // good reason: noise has no mip chain, so keeping fine detail past a
+          // few tens of metres buys aliasing rather than texture. The cost is
+          // that beyond the fade the land has NOTHING left, and measured with
+          // tools/analyse.mjs the far ranges carried less local contrast than
+          // the sky did -- 5.0 against 6.4, where the playfield reads 17.7.
+          // Flat plastic, exactly as the brief describes.
+          //
+          // The fix is not to extend the fine bands outward but to hand the
+          // distance its own, much coarser one. At 0.055 the wavelength is
+          // roughly 18 world units, which at a hundred metres still covers
+          // several pixels, so it survives sampling instead of shimmering.
+          // Two octaves, both cheap, and it only ramps in where the near bands
+          // have already gone: the two never overlap, so nothing is doubled.
+          float farIn = smoothstep(60.0, 130.0, viewDist);
+          if (farIn > 0.0) {
+            float coarse = gnValue(w * 0.055 + vec2(19.7, 4.3));
+            float spur   = gnValue(w * 0.145 - vec2(7.1, 12.9));
+            // Centred on zero so this modulates what is already there rather
+            // than lifting or darkening the whole distance.
+            float mottle = (coarse - 0.5) * 1.35 + (spur - 0.5) * 0.62;
+            // Slope-biased: flanks catch cover, crests stay bare, which is how
+            // a forested foothill actually reads from far away.
+            float cover = mix(0.55, 1.0, smoothstep(0.10, 0.45, slope));
+            col *= 1.0 + mottle * 0.115 * farIn * cover;
+            // A touch of saturation with it, so the mottling reads as tree
+            // cover and rock rather than as a grey dirty-lens effect.
+            float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+            col = mix(vec3(lum), col, 1.0 + mottle * 0.10 * farIn);
+          }
+
           diffuseColor.rgb *= col;
 
           gRough = mix(0.98, 0.76, rockM);

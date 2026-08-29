@@ -528,6 +528,22 @@ export class Terrain {
     return top + (bot - top) * ty;
   }
 
+  /**
+   * Ground height anywhere, including outside the playfield.
+   *
+   * `heightAt` samples the heightfield grid, which only covers the 80-unit
+   * map, and clamps outside it -- so every query past the rim comes back at
+   * the map's edge height while the actual apron falls away and then climbs
+   * into foothills. Anything placed out there by that number floats in mid
+   * air or sinks into a hillside. This reproduces what the apron mesh is
+   * actually built from, so it agrees with the surface a player can see.
+   */
+  surfaceHeightAt(x: number, z: number): number {
+    const half = this.size * 0.5;
+    if (Math.abs(x) <= half && Math.abs(z) <= half) return this.heightAt(x, z);
+    return this.baseHeight(x, z) + this.distantRelief(x, z);
+  }
+
   /** Surface normal at a world x/z, from the sampled heightfield. */
   normalAt(x: number, z: number, out = new THREE.Vector3()): THREE.Vector3 {
     const e = this.size / (this.res - 1);
