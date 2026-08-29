@@ -57,6 +57,17 @@ export interface PassBreakdown {
   synced: boolean;
 }
 
+/** The subset of CameraRig the harness drives. Kept structural to avoid a
+ *  circular import between the rig and this control surface. */
+export interface RigHandle {
+  update(dt: number): void;
+  setEdgePan(enabled: boolean): void;
+  readonly wasDrag: boolean;
+  readonly touchCount: number;
+  readonly currentDistance: number;
+  target: THREE.Vector3;
+}
+
 export interface DebugApi {
   ready: boolean;
   engine: Engine;
@@ -79,6 +90,22 @@ export interface DebugApi {
   /** Reset the sim clock so captures are reproducible. */
   reset(): void;
   stats(): Record<string, number>;
+  /** The live camera rig, once one has been constructed. */
+  rig?: RigHandle;
+}
+
+/**
+ * Publish the camera rig on the debug surface.
+ *
+ * The rig is constructed in main.ts, which individual agents must not edit, so
+ * it registers itself here instead. tools/test-touch.mjs needs a handle on it
+ * to assert things that are not observable from the camera transform alone --
+ * whether edge-pan is off by default, most obviously.
+ */
+export function registerRig(rig: RigHandle) {
+  const w = window as unknown as { __game?: DebugApi; __rig?: RigHandle };
+  w.__rig = rig;
+  if (w.__game) w.__game.rig = rig;
 }
 
 
@@ -293,6 +320,9 @@ export function installDebugApi(engine: Engine): DebugApi {
     },
   };
 
-  (window as unknown as { __game: DebugApi }).__game = api;
+  const w = window as unknown as { __game: DebugApi; __rig?: RigHandle };
+  // A rig built before the api existed still gets attached.
+  if (w.__rig) api.rig = w.__rig;
+  w.__game = api;
   return api;
 }
