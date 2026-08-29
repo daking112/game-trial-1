@@ -61,6 +61,10 @@ export const SHOTS = {
                           if (!r) break;
                           for (const x of r) if (x.isNew) { own.add(x.speciesId); window.__collection.markCaught(x.speciesId); }
                         }
+                        window.__stars.upgrade('fernlet', window.__gacha);
+                        window.__stars.upgrade('fernlet', window.__gacha);
+                        window.__stars.upgrade('fernlet', window.__gacha);
+                        window.__stars.upgrade('voltquill', window.__gacha);
                         window.__starPanel.toggle();` },
   // Selects the first placed tower so the inspector panel is visible.
   inspect:   { position: [-9.5, 3.4, -0.5], target: [-14, 1.3, -6], fov: 38, advance: 5.0,

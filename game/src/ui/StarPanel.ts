@@ -152,8 +152,21 @@ export class StarPanel {
     if (this.open) this.render();
   }
 
+  /**
+   * Buy as many stars as the banked shards cover, in one press.
+   *
+   * The button used to be labelled with the number it could afford while
+   * buying exactly one, and charging the first star's price under a label
+   * that implied the total. Either half could have been the fix; buying the
+   * lot is the one that saves pressing the same button five times.
+   */
   private doUpgrade(speciesId: string) {
-    const rank = this.stars.upgrade(speciesId, this.gacha);
+    let rank: number | null = null;
+    for (let i = 0; i < MAX_STARS; i++) {
+      const next = this.stars.upgrade(speciesId, this.gacha);
+      if (next === null) break;
+      rank = next;
+    }
     if (rank === null) return;
     this.cb.onUpgrade(speciesId, rank);
     this.render();
@@ -184,15 +197,11 @@ export class StarPanel {
       });
 
     const ready = rows.filter((r) => r.isOwned && r.cost !== null && r.have >= r.cost).length;
-    const banked = rows.reduce((sum, r) => sum + (r.isOwned ? r.have : 0), 0);
 
     this.root.innerHTML = `
       <div class="st-sheet">
         <header class="st-head">
           <h2>Star Ranks</h2>
-          <span class="st-bank" title="Shards banked across all creatures">
-            <i class="st-shard"></i><b>${banked}</b>
-          </span>
           ${ready > 0 ? `<span class="st-ready">${ready} ready</span>` : ''}
           <button class="st-x" type="button" aria-label="Close">&times;</button>
         </header>
@@ -227,11 +236,10 @@ export class StarPanel {
     const evolvesInto = evolved ? evolved.name : '';
     const maxed = cost === null;
     const affordable = !maxed && have >= cost!;
-    const pct = maxed ? 100 : Math.min(100, Math.round((have / cost!) * 100));
 
     const pips = Array.from({ length: MAX_STARS }, (_, i) =>
       `<span class="st-pip ${i < rank ? 'is-on' : ''}">&#9733;</span>`).join('') +
-      `<span class="st-rank">${rank}/${MAX_STARS}</span>`;
+      '';
 
     // How many stars the banked shards would buy in one go. Showing "368 / 24"
     // and a full bar tells the player nothing about what to do next; showing
@@ -245,11 +253,21 @@ export class StarPanel {
       affordableCount++;
     }
 
+    // The bar measures the distance still to walk, not shards already past
+    // their purpose. Measured against the FIRST star's price it pinned to
+    // full the moment any surplus built up, so four rows holding wildly
+    // different surpluses all drew the same full bar and the fill said
+    // nothing at all.
+    const remainder = have - spent;
+    const nextCost = starCost(sp.id, rank + affordableCount);
+    const pct = nextCost === null ? 100 : Math.min(100, Math.round((remainder / nextCost) * 100));
+
     const now = starMultipliers(rank);
     const next = starMultipliers(Math.min(rank + 1, MAX_STARS));
+    // The gain, not the current value. Twelve copies of "1.00x" across four
+    // rows read as an unpopulated template rather than as data.
     const delta = (a: number, b: number) =>
-      `<span class="st-now">${a.toFixed(2)}&times;</span>` +
-      (maxed ? '' : `<span class="st-arrow">&rsaquo;</span><span class="st-next">${b.toFixed(2)}&times;</span>`);
+      `<span class="st-next">+${Math.round(((maxed ? a : b) - 1) * 100)}%</span>`;
 
     return `
       <li class="st-card ${isOwned ? '' : 'is-locked'} ${affordable ? 'is-ready' : ''}"
@@ -275,8 +293,8 @@ export class StarPanel {
             <div class="st-barwrap">
               <div class="st-bar"><i style="width:${pct}%"></i></div>
               <span class="st-count">
-                ${maxed ? 'Max rank'
-                        : `<i class="st-shard"></i>${have} <span class="st-of">of ${cost}</span>`}
+                ${maxed || nextCost === null ? 'Max rank'
+                  : `<i class="st-shard"></i>${remainder} <span class="st-of">of ${nextCost}</span>`}
               </span>
             </div>
           ` : `
@@ -290,7 +308,7 @@ export class StarPanel {
         ${isOwned && !maxed ? `
           <button class="st-btn" type="button" data-up="${sp.id}" ${affordable ? '' : 'disabled'}>
             <span class="st-btn-label">Star Up${affordableCount > 1 ? ` &times;${affordableCount}` : ''}</span>
-            <span class="st-btn-cost"><i class="st-shard"></i>${cost}</span>
+            <span class="st-btn-cost"><i class="st-shard"></i>${spent || cost}</span>
           </button>
         ` : isOwned ? '<span class="st-max">MAX</span>' : ''}
       </li>
@@ -375,10 +393,9 @@ export class StarPanel {
         color: #0d141b; background: var(--c); padding: 3px 7px; border-radius: 5px;
       }
       .st-card.is-locked .st-rarity { color: #fff; background: rgba(255,255,255,.16); }
-      .st-pips { margin-left: auto; display: flex; align-items: center; gap: 2px; font-size: 17px; }
+      .st-pips { margin-left: auto; display: flex; align-items: center; gap: 3px; font-size: 22px; }
       .st-pip { color: rgba(255,255,255,.14); text-shadow: 0 1px 0 rgba(0,0,0,.5); }
       .st-pip.is-on { color: #ffd35c; text-shadow: 0 0 8px rgba(255,211,92,.75); }
-      .st-rank { font-size: 11px; font-weight: 800; opacity: .55; margin-left: 5px; }
       .st-stats { display: flex; gap: 13px; font-size: 11px; }
       .st-stats span { white-space: nowrap; color: rgba(255,255,255,.62); }
       .st-now { font-weight: 700; color: rgba(255,255,255,.9); }
@@ -394,7 +411,7 @@ export class StarPanel {
          half-empty one and every row's fill contradicted its own numbers. */
       .st-bar i {
         display: block; height: 100%; border-radius: 999px;
-        background: linear-gradient(90deg, color-mix(in srgb, var(--c) 72%, #0b1118), var(--c));
+        background: linear-gradient(90deg, #3f7fb8, #7cc4f5);
         transition: width .3s ease;
       }
       .st-count {
@@ -431,12 +448,18 @@ export class StarPanel {
         background: rgba(255,211,92,.13);
       }
       .st-note { font-size: 11.5px; opacity: .5; line-height: 1.5; margin: 0; }
+      /* A real two-tier row rather than a scaled-down landscape one: identity
+         on the first line, the transaction on the second. The single-band
+         layout overflowed a 390pt viewport by about a quarter before the
+         button was even counted. */
       @media (max-width: 760px) {
         .st-sheet { padding: 14px; }
-        .st-card { flex-wrap: wrap; }
-        .st-main { flex-basis: calc(100% - 81px); }
+        .st-card { flex-wrap: wrap; row-gap: 10px; }
+        .st-orb { width: 58px; height: 58px; }
+        .st-main { flex-basis: calc(100% - 71px); }
         .st-stats { flex-wrap: wrap; gap: 8px; }
-        .st-btn { width: 100%; margin-top: 4px; }
+        .st-barwrap { flex-basis: 100%; order: 3; }
+        .st-btn { flex-basis: 100%; order: 4; min-width: 0; }
       }
     `;
     document.head.appendChild(st);
