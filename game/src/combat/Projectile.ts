@@ -1,15 +1,37 @@
 import * as THREE from 'three';
-import type { Enemy } from './Enemy';
+import type { Enemy, DamageKind } from './Enemy';
 
 export interface ProjectileSpec {
   speed: number;
   damage: number;
   color: THREE.ColorRepresentation;
+  /** Which element fired it. Drives the shot's shape, its impact and its sound. */
+  kind?: DamageKind;
   /** Radius of splash damage; 0 for single target. */
   splash?: number;
   /** Arc height for lobbed shots; 0 for flat. */
   arc?: number;
 }
+
+/** Per-element shot shape. A seed and a bolt must not read as the same dot. */
+interface ShotLook {
+  /** Radius multiplier. */
+  girth: number;
+  /** Extra stretch along travel, on top of the speed-derived stretch. */
+  streak: number;
+  emissive: number;
+  /** Spin about the travel axis. */
+  spin: number;
+}
+
+const LOOKS: Record<DamageKind, ShotLook> = {
+  seed: { girth: 1.25, streak: 0.6, emissive: 2.2, spin: 7 },
+  ember: { girth: 1.15, streak: 1.1, emissive: 4.2, spin: 0 },
+  jet: { girth: 0.95, streak: 2.0, emissive: 2.6, spin: 0 },
+  bolt: { girth: 0.55, streak: 5.5, emissive: 5.5, spin: 22 },
+  shard: { girth: 0.7, streak: 3.2, emissive: 3.0, spin: 14 },
+};
+const DEFAULT_LOOK: ShotLook = { girth: 1, streak: 1, emissive: 3, spin: 0 };
 
 /**
  * Pooled projectile.
@@ -21,12 +43,18 @@ export interface ProjectileSpec {
 export class Projectile {
   readonly mesh: THREE.Mesh;
   active = false;
+  /** Unit vector of travel on the frame it landed; the impact fans along it. */
+  readonly heading = new THREE.Vector3(0, 0, -1);
+  spec: ProjectileSpec | null = null;
 
   private target: Enemy | null = null;
-  private spec: ProjectileSpec | null = null;
+  private look: ShotLook = DEFAULT_LOOK;
   private travelled = 0;
   private readonly from = new THREE.Vector3();
   private life = 0;
+  private roll = 0;
+  /** Counts down to the next trail bead. */
+  trailClock = 0;
 
   constructor(shared: THREE.BufferGeometry) {
     this.mesh = new THREE.Mesh(
@@ -37,6 +65,7 @@ export class Projectile {
         emissiveIntensity: 3.0,
         roughness: 0.25,
         transparent: true,
+        toneMapped: false,
       }),
     );
     this.mesh.visible = false;
@@ -47,14 +76,18 @@ export class Projectile {
     this.active = true;
     this.target = target;
     this.spec = spec;
+    this.look = spec.kind ? LOOKS[spec.kind] : DEFAULT_LOOK;
     this.travelled = 0;
     this.life = 0;
+    this.roll = 0;
+    this.trailClock = 0;
     this.from.copy(origin);
     this.mesh.position.copy(origin);
     this.mesh.visible = true;
     const m = this.mesh.material as THREE.MeshStandardMaterial;
     m.color.set(spec.color);
     m.emissive.set(spec.color);
+    m.emissiveIntensity = this.look.emissive;
     m.opacity = 1;
     this.mesh.scale.setScalar(1);
   }
@@ -71,18 +104,21 @@ export class Projectile {
       return null;
     }
 
-    const to = this.target.position;
-    const dir = new THREE.Vector3().subVectors(to, this.mesh.position);
+    // Aim at the body's mass, not its feet, so impacts land on the mesh.
+    const to = _to.copy(this.target.position).setY(this.target.centreY);
+    const dir = _dir.subVectors(to, this.mesh.position);
     const dist = dir.length();
-    const stepLen = this.spec.speed * dt;
+    const stepLen = this.spec.speed * SPEED_SCALE * dt;
 
     if (dist <= Math.max(stepLen, 0.35)) {
+      if (dist > 1e-4) this.heading.copy(dir).divideScalar(dist);
       const hit = this.target;
       this.retire();
       return hit;
     }
 
     dir.divideScalar(dist);
+    this.heading.copy(dir);
     this.mesh.position.addScaledVector(dir, stepLen);
     this.travelled += stepLen;
 
@@ -94,9 +130,14 @@ export class Projectile {
     }
 
     // Stretch along the direction of travel — a round dot reads as a bug,
-    // a streak reads as speed.
+    // a streak reads as speed — and thicken or thin it by element.
     this.mesh.lookAt(to);
-    this.mesh.scale.set(1, 1, 1 + Math.min(this.spec.speed * 0.06, 2.2));
+    if (this.look.spin) {
+      this.roll += dt * this.look.spin;
+      this.mesh.rotateZ(this.roll);
+    }
+    const g = this.look.girth;
+    this.mesh.scale.set(g, g, g * (1 + Math.min(this.spec.speed * 0.06, 2.2)) * this.look.streak);
     return null;
   }
 
@@ -111,6 +152,31 @@ export class Projectile {
   }
 }
 
+/**
+ * Global slowdown on every shot.
+ *
+ * Shots used to cross the gap between a tower and its target inside two
+ * frames, so a still frame of a live firefight contained no projectiles at
+ * all and nothing tied a tower to what it was killing. Slowing them makes the
+ * shot itself a readable object, and it also sharpens the existing rule that
+ * a fast enemy can outrun a slow weapon.
+ */
+const SPEED_SCALE = 0.62;
+
+const _to = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+
+export interface ProjectileHit {
+  enemy: Enemy;
+  spec: ProjectileSpec;
+  at: THREE.Vector3;
+  /** Direction of travel, for fanning the impact the way the shot was going. */
+  heading: THREE.Vector3;
+}
+
+/** Seconds between trail beads on a single shot. */
+const TRAIL_INTERVAL = 0.022;
+
 /** Fixed-size pool so combat never allocates mid-frame. */
 export class ProjectilePool {
   readonly group = new THREE.Group();
@@ -118,7 +184,7 @@ export class ProjectilePool {
   private readonly geo: THREE.BufferGeometry;
 
   constructor(size = 160) {
-    this.geo = new THREE.SphereGeometry(0.13, 10, 8);
+    this.geo = new THREE.SphereGeometry(0.15, 10, 8);
     for (let i = 0; i < size; i++) {
       const p = new Projectile(this.geo);
       this.pool.push(p);
@@ -133,15 +199,26 @@ export class ProjectilePool {
     return false; // pool exhausted; dropping a shot beats stuttering
   }
 
-  /** Steps every live projectile, returning the hits that landed. */
-  update(dt: number): Array<{ enemy: Enemy; spec: ProjectileSpec; at: THREE.Vector3 }> {
-    const hits: Array<{ enemy: Enemy; spec: ProjectileSpec; at: THREE.Vector3 }> = [];
+  /**
+   * Steps every live projectile, returning the hits that landed.
+   *
+   * `onTrail` is called at a fixed cadence per live shot with the position it
+   * has just left, so the caller can lay a dotted line behind it. The cadence
+   * is per-projectile rather than per-frame so trail density does not change
+   * with frame rate or with how many shots are in the air.
+   */
+  update(dt: number, onTrail?: (at: THREE.Vector3, color: THREE.ColorRepresentation) => void): ProjectileHit[] {
+    const hits: ProjectileHit[] = [];
     for (const p of this.pool) {
       if (!p.active) continue;
       const at = p.mesh.position.clone();
-      const spec = (p as unknown as { spec: ProjectileSpec }).spec;
+      const spec = p.spec!;
+      if (onTrail) {
+        p.trailClock -= dt;
+        if (p.trailClock <= 0) { p.trailClock = TRAIL_INTERVAL; onTrail(at, spec.color); }
+      }
       const enemy = p.update(dt);
-      if (enemy) hits.push({ enemy, spec, at });
+      if (enemy) hits.push({ enemy, spec, at, heading: p.heading.clone() });
     }
     return hits;
   }
