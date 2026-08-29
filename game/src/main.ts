@@ -20,6 +20,7 @@ import { SummonPanel } from './ui/SummonPanel';
 import { Gacha } from './meta/Gacha';
 import { Stars, starMultipliers, starCost, MAX_STARS } from './meta/StarUp';
 import { StarPanel } from './ui/StarPanel';
+import { HealthBars } from './ui/HealthBars';
 import { TowerPanel } from './ui/TowerPanel';
 import { EndScreen } from './ui/EndScreen';
 
@@ -111,6 +112,8 @@ engine.scene.add(particles.points);
 
 const feel = new Feel();
 const floaters = new FloatingText(hudHost);
+// Enemy health, readable from the overview camera rather than only up close.
+const healthBars = new HealthBars(hudHost);
 
 const battle = new Battle(track, {
   onWaveStart: (i, name) => { hud.banner(`Wave ${i} — ${name}`, 'info'); audio.fanfare(); },
@@ -546,6 +549,9 @@ engine.onUpdate((dt, elapsed) => {
 
   const size = engine.renderer.getSize(new THREE.Vector2());
   floaters.update(dt, engine.camera, size.x, size.y);
+  // Unscaled dt: hit-stop slows the sim, and a bar that froze with it would
+  // read as a dropped frame rather than as impact.
+  healthBars.update(dt, engine.camera, battle.enemies, size.x, size.y);
 
   updateHover();
   hud.update(dt);

@@ -45,6 +45,10 @@ export const SHOTS = {
   world:     { position: [0, 330, 120],  target: [0, 0, -30],  fov: 78, advance: 2.0 },
   // Mid-combat: far enough into a wave that projectiles and impacts are live.
   combat:    { position: [-6, 9, 16],   target: [-4, 1, 0],   fov: 44, advance: 9.0 },
+  // Down the track, deep into a wave, where the enemies actually are. The
+  // `combat` framing catches the towers but often no enemies at all, which
+  // makes it useless for judging anything about the fight itself.
+  fight:     { position: [2, 7.5, 20], target: [1, 1.2, -2], fov: 40, advance: 14.0 },
   // Opens the codex overlay; only meaningful with --dom.
   codex:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 6.0,
                before: 'window.__codex.toggle()' },
