@@ -18,7 +18,8 @@ import { Collection, statMultipliers, EVOLUTION_LEVEL, evolutionBonus } from './
 import { CollectionPanel } from './ui/CollectionPanel';
 import { SummonPanel } from './ui/SummonPanel';
 import { Gacha } from './meta/Gacha';
-import { Stars, starMultipliers, starCost } from './meta/StarUp';
+import { Stars, starMultipliers, starCost, MAX_STARS } from './meta/StarUp';
+import { StarPanel } from './ui/StarPanel';
 import { TowerPanel } from './ui/TowerPanel';
 import { EndScreen } from './ui/EndScreen';
 
@@ -368,7 +369,7 @@ function placeCreature(spec: (typeof ROSTER)[number], at: THREE.Vector3): Tower 
   const lvl = statMultipliers(entry?.level ?? 1);
   // Levels come from play, stars from duplicates. They stack multiplicatively,
   // so investing in both beats maxing either alone.
-  const star = starMultipliers(stars.get(spec.id));
+  const star = starMultipliers(stars.effective(spec.id));
   const damage = spec.damage * lvl.damage * star.damage;
   const tower = new Tower(visual, {
     damage,
@@ -463,9 +464,16 @@ function evolveIfPossible(t: Tower) {
   const sp = SPECIES[next];
   const bonus = evolutionBonus();
   const tierMult = 1.42 ** (t.tier - 1);
-  t.stats.damage = sp.stats.damage * bonus.damage * tierMult;
-  t.stats.range = sp.stats.range * bonus.range * 1.1 ** (t.tier - 1);
-  t.stats.rate = sp.stats.attackSpeed * bonus.rate * 1.16 ** (t.tier - 1);
+  // Rebuilding stats from the species base drops everything that was layered
+  // on top of it, so the level and star multipliers have to be re-applied
+  // here. Without this, evolving quietly deleted a player's star investment
+  // -- around a dozen full runs of shards -- at the exact moment the game
+  // told them they had succeeded.
+  const lvl = statMultipliers(collection.get(id)?.level ?? 1);
+  const star = starMultipliers(stars.effective(next));
+  t.stats.damage = sp.stats.damage * bonus.damage * tierMult * lvl.damage * star.damage;
+  t.stats.range = sp.stats.range * bonus.range * 1.1 ** (t.tier - 1) * lvl.range * star.range;
+  t.stats.rate = sp.stats.attackSpeed * bonus.rate * 1.16 ** (t.tier - 1) * lvl.rate * star.rate;
   t.stats.projectile.damage = t.stats.damage;
   t.stats.projectile.color = sp.palette.glow;
 
@@ -485,13 +493,36 @@ function towerName(t: Tower): string {
   return id ? SPECIES[id].name : 'Creature';
 }
 
+const ownedSpecies = () =>
+  new Set(collection.all().filter((e) => e.caught).map((e) => e.speciesId));
+
+/** Species holding enough shards to buy their next star right now. */
+const starsReady = () =>
+  [...ownedSpecies()].filter((id) => stars.canAfford(id, gacha)).length;
+
+const starPanel = new StarPanel(hudHost, gacha, stars, {
+  owned: ownedSpecies,
+  onUpgrade: (_id, rank) => {
+    audio.fanfare(rank >= MAX_STARS);
+    hud.banner(`Star rank ${rank}`, 'good');
+  },
+  onClose: () => starPanel.toggle(),
+});
+
 const summon = new SummonPanel(hudHost, gacha, {
-  owned: () => new Set(collection.all().filter((e) => e.caught).map((e) => e.speciesId)),
+  owned: ownedSpecies,
   onNewSpecies: (id) => {
     collection.markCaught(id);
     audio.fanfare(true);
   },
   onClose: () => summon.toggle(),
+  onOpenStars: () => {
+    // One screen at a time: the star screen is a step out of the summoning
+    // screen, not a layer on top of it.
+    if (summon.isOpen) summon.toggle();
+    starPanel.toggle();
+  },
+  starsReady,
 });
 
 const rig = new CameraRig(engine.camera, engine.renderer.domElement);
@@ -556,6 +587,7 @@ engine.start();
 (window as unknown as { __summon: SummonPanel }).__summon = summon;
 (window as unknown as { __gacha: Gacha }).__gacha = gacha;
 (window as unknown as { __stars: Stars }).__stars = stars;
+(window as unknown as { __starPanel: StarPanel }).__starPanel = starPanel;
 // Test hook: the star cost curve, so `tools/test-economy.mjs` measures the
 // same function the star-up UI charges against.
 (window as unknown as { __starCost: (id: string, s: number) => number | null }).__starCost =

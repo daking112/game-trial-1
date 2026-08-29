@@ -50,6 +50,28 @@ export function starMultipliers(stars: number) {
   };
 }
 
+/**
+ * The species whose star rank governs this one.
+ *
+ * Only stage-1 species are in the summon pool, so only they can ever
+ * accumulate duplicate shards -- an evolved form has no way to earn a star of
+ * its own. Stars therefore belong to the evolution LINE, not to the form:
+ * five stars on a starter keep applying after it evolves. The alternative is
+ * that evolving silently deletes the bonus a player spent a dozen runs
+ * earning, which reads as a punishment for succeeding.
+ */
+export function starLineageRoot(speciesId: string): string {
+  let id = speciesId;
+  // Guarded rather than a bare while: a malformed cycle in the data must not
+  // hang the game.
+  for (let hops = 0; hops < 8; hops++) {
+    const from = SPECIES[id]?.evolvesFrom;
+    if (!from || !SPECIES[from]) return id;
+    id = from;
+  }
+  return id;
+}
+
 export interface StarState {
   /** speciesId -> star rank, 0..MAX_STARS. */
   stars: Record<string, number>;
@@ -66,6 +88,16 @@ export class Stars {
 
   get(speciesId: string): number {
     return this.state.stars[speciesId] ?? 0;
+  }
+
+  /**
+   * Star rank in force for this species, following the evolution line.
+   *
+   * Use this everywhere stats are computed; `get` is the raw per-species
+   * record and is only what the star-up screen charges against.
+   */
+  effective(speciesId: string): number {
+    return this.get(starLineageRoot(speciesId));
   }
 
   /** Cost of the next star, or null if maxed. */

@@ -51,6 +51,17 @@ export const SHOTS = {
   // Opens the summoning screen with a ten-pull revealed.
   summon:    { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 4.0,
                before: 'window.__gacha.addCogs(5000); window.__summon.toggle(); window.__summon.update(99)' },
+  // The star-up screen, seeded with a realistic pile of duplicate shards so
+  // the cards show real progress rather than four empty bars.
+  stars:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 4.0,
+               before: `window.__gacha.addCogs(60000);
+                        const own = new Set();
+                        for (let i = 0; i < 10; i++) {
+                          const r = window.__gacha.summon(10, own);
+                          if (!r) break;
+                          for (const x of r) if (x.isNew) { own.add(x.speciesId); window.__collection.markCaught(x.speciesId); }
+                        }
+                        window.__starPanel.toggle();` },
   // Selects the first placed tower so the inspector panel is visible.
   inspect:   { position: [-9.5, 3.4, -0.5], target: [-14, 1.3, -6], fov: 38, advance: 5.0,
                before: 'window.__selectFirstTower && window.__selectFirstTower()' },

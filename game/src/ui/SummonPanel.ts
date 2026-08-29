@@ -6,6 +6,10 @@ export interface SummonCallbacks {
   owned(): Set<string>;
   onNewSpecies(speciesId: string): void;
   onClose(): void;
+  /** Opens the star-up screen, where the duplicate shards are spent. */
+  onOpenStars?(): void;
+  /** Species with enough shards banked for their next star, for the badge. */
+  starsReady?(): number;
 }
 
 const RARITY_COLOR: Record<Rarity, string> = {
@@ -77,6 +81,9 @@ export class SummonPanel {
   private render() {
     const odds = publishedOdds();
     const pity = this.gacha.pityCountdown();
+    // Duplicates are most of what a summon produces, so the way out of a pile
+    // of them belongs on this screen rather than behind a keyboard shortcut.
+    const ready = this.cb.starsReady?.() ?? 0;
 
     this.root.innerHTML = `
       <div class="sm-sheet">
@@ -97,6 +104,13 @@ export class SummonPanel {
           </button>
         </div>
 
+        ${this.cb.onOpenStars ? `
+          <button class="sm-stars" data-stars type="button">
+            Star Ranks
+            ${ready > 0 ? `<span class="sm-badge">${ready}</span>` : ''}
+          </button>
+        ` : ''}
+
         <div class="sm-odds">
           <span class="sm-odds-label">Base rates</span>
           ${odds.map((o) => `<span class="sm-odd" style="--c:${RARITY_COLOR[o.rarity]}">${o.rarity} ${o.percent}%</span>`).join('')}
@@ -111,6 +125,7 @@ export class SummonPanel {
     this.root.querySelector('.sm-x')?.addEventListener('click', () => this.cb.onClose());
     this.root.querySelector('[data-one]')?.addEventListener('click', () => this.doSummon(1));
     this.root.querySelector('[data-ten]')?.addEventListener('click', () => this.doSummon(10));
+    this.root.querySelector('[data-stars]')?.addEventListener('click', () => this.cb.onOpenStars?.());
     this.renderResults();
   }
 
@@ -213,6 +228,17 @@ export class SummonPanel {
       .sm-btn-multi {
         background: linear-gradient(180deg, #ffe6a8, #f0b95c);
         box-shadow: 0 5px 0 #a8763a;
+      }
+      .sm-stars {
+        position: relative; width: 100%; font: inherit; font-weight: 800; font-size: 13px;
+        cursor: pointer; color: #ffd35c; padding: 10px; margin-bottom: 14px;
+        background: rgba(255,211,92,.1); border: 1px solid rgba(255,211,92,.34);
+        border-radius: 12px;
+      }
+      .sm-stars:hover { background: rgba(255,211,92,.17); }
+      .sm-badge {
+        background: #ffd35c; color: #1a1206; font-size: 10px; font-weight: 900;
+        padding: 2px 7px; border-radius: 999px; margin-left: 6px;
       }
       .sm-odds { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-bottom: 9px; }
       .sm-odds-label { font-size: 10.5px; letter-spacing: 1.1px; text-transform: uppercase; opacity: .5; }
