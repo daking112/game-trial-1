@@ -1,5 +1,9 @@
 # Gearwood Thicket — build brief
 
+> Resuming in a fresh session? Read `HANDOFF.md` first — the container is
+> disposable, so the reference art and the dev server have to be rebuilt
+> before any of the below applies.
+
 A hybrid monster-collector / tower-defense game in Three.js. You place
 collectable creatures along a track; waves of enemies walk it; creatures attack
 them. Bloons-style tower defense structure, Pokemon-grade creature presentation.
