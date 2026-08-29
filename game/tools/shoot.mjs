@@ -49,8 +49,15 @@ export const SHOTS = {
   codex:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 6.0,
                before: 'window.__codex.toggle()' },
   // Opens the summoning screen with a ten-pull revealed.
+  // A ten-pull, fully revealed. The reveal advances one card per update, so a
+  // single call with a huge dt shows exactly one card -- and the old script
+  // never pressed the button at all, so this shot was capturing an empty
+  // stage and the summoning screen went unreviewed.
   summon:    { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 4.0,
-               before: 'window.__gacha.addCogs(5000); window.__summon.toggle(); window.__summon.update(99)' },
+               before: `window.__gacha.addCogs(5000);
+                        window.__summon.toggle();
+                        document.querySelector('[data-ten]').click();
+                        for (let i = 0; i < 12; i++) window.__summon.update(9);` },
   // The star-up screen, seeded with a realistic pile of duplicate shards so
   // the cards show real progress rather than four empty bars.
   stars:     { position: [0, 22, 52], target: [0, 2, -10], fov: 46, advance: 4.0,

@@ -1,5 +1,6 @@
 import { SPECIES, type Rarity } from '../creatures/species';
 import { Gacha, SUMMON_COST, MULTI_COST, publishedOdds, type SummonResult } from '../meta/Gacha';
+import { buildPortraits, creaturePortrait } from './StarPanel';
 
 export interface SummonCallbacks {
   /** Species the player already owns, for duplicate handling. */
@@ -139,11 +140,18 @@ export class SummonPanel {
     }
 
     const shown = this.revealing.slice(0, this.revealIndex);
+    // The reveal is the best moment in the loop, so it shows the actual
+    // creature rather than a coloured ball standing in for one.
+    buildPortraits(shown.map((r) => r.speciesId));
     stage.innerHTML = `<div class="sm-grid">${shown.map((r) => {
       const sp = SPECIES[r.speciesId];
       return `
         <div class="sm-card ${r.isNew ? 'is-new' : ''}" style="--c:${RARITY_COLOR[r.rarity]};--a:${sp.palette.primary};--b:${sp.palette.secondary}">
-          <span class="sm-orb"></span>
+          <span class="sm-orb">${
+            creaturePortrait(r.speciesId)
+              ? `<img src="${creaturePortrait(r.speciesId)}" alt="" draggable="false">`
+              : ''
+          }</span>
           <span class="sm-name">${sp.name}</span>
           <span class="sm-rarity">${r.rarity}</span>
           ${r.isNew ? '<span class="sm-tag">NEW</span>'
@@ -202,12 +210,14 @@ export class SummonPanel {
       }
       .sm-card.is-new { box-shadow: 0 0 22px -4px var(--c); }
       .sm-orb {
-        width: 40px; height: 40px; border-radius: 50%;
+        width: 58px; height: 58px; border-radius: 13px; overflow: hidden;
+        display: grid; place-items: center;
         background:
-          radial-gradient(circle at 34% 28%, #fff8, transparent 54%),
-          linear-gradient(160deg, var(--a) 55%, var(--b, var(--a)) 100%);
-        box-shadow: inset 0 -4px 8px rgba(0,0,0,.34);
+          radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--c) 40%, transparent), transparent 68%),
+          linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.26));
+        box-shadow: inset 0 0 12px rgba(0,0,0,.4);
       }
+      .sm-orb img { width: 100%; height: 100%; object-fit: contain; }
       .sm-name { font-size: 12.5px; font-weight: 800; }
       .sm-rarity { font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--c); font-weight: 800; }
       .sm-tag {

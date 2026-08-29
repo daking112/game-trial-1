@@ -23,6 +23,17 @@ const PORTRAIT_PX = 144;
 const portraitCache = new Map<string, string>();
 
 /**
+ * The rendered portrait for a species, if one has been built.
+ *
+ * Exported from this module rather than from a file of its own because the
+ * surrounding UI files are being edited in parallel and a new shared module
+ * would collide; the renderer below is the only thing that fills this cache.
+ */
+export function creaturePortrait(speciesId: string): string | undefined {
+  return portraitCache.get(speciesId);
+}
+
+/**
  * Render a species' actual creature to a portrait image, once, and keep it.
  *
  * The first version of this screen drew each creature as a two-stop radial
@@ -37,7 +48,7 @@ const portraitCache = new Map<string, string>();
  * results are data URLs held for the session -- a portrait is a few KB and
  * never changes, so re-rendering it on each open would be pure waste.
  */
-function buildPortraits(ids: string[]) {
+export function buildPortraits(ids: string[]) {
   const missing = ids.filter((id) => !portraitCache.has(id) && SPECIES[id]);
   if (missing.length === 0) return;
 
