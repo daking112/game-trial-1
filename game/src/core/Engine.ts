@@ -18,8 +18,10 @@ export class Engine {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly composer: EffectComposer;
+  readonly scenePass: RenderPass;
   readonly bloom: UnrealBloomPass;
   readonly grade: ShaderPass;
+  readonly smaa: SMAAPass;
 
   /** Seconds of simulated time since start. Advanced only by step(). */
   elapsed = 0;
@@ -64,7 +66,8 @@ export class Engine {
     );
 
     this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.scenePass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(this.scenePass);
 
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(container.clientWidth, container.clientHeight),
@@ -77,11 +80,24 @@ export class Engine {
     this.grade = new ShaderPass(GradePass);
     this.composer.addPass(this.grade);
 
-    const smaa = new SMAAPass(container.clientWidth, container.clientHeight);
-    this.composer.addPass(smaa);
+    this.smaa = new SMAAPass(container.clientWidth, container.clientHeight);
+    this.composer.addPass(this.smaa);
 
     this.setSize(container.clientWidth, container.clientHeight);
     window.addEventListener('resize', this.onResize);
+  }
+
+  /**
+   * The post chain, named, so the profiler can attribute frame time to a pass
+   * rather than reporting one opaque number. Order matches the composer.
+   */
+  get passes(): Array<{ name: string; pass: { enabled: boolean } }> {
+    return [
+      { name: 'main', pass: this.scenePass },
+      { name: 'bloom', pass: this.bloom },
+      { name: 'grade', pass: this.grade },
+      { name: 'smaa', pass: this.smaa },
+    ];
   }
 
   private onResize = () => {
