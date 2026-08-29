@@ -47,33 +47,36 @@ export interface EnemyArchetype {
 export const ARCHETYPES: Record<EnemyTier, EnemyArchetype> = {
   husk: {
     tier: 'husk', name: 'Cog Husk',
-    maxHealth: 10, speed: 4.9, bounty: 4, leak: 1, scale: 1.38,
+    maxHealth: 10, speed: 5.6, bounty: 4, leak: 1, scale: 1.38,
     shell: '#ff5a12', trim: '#ffe24a',
   },
   dart: {
     tier: 'dart', name: 'Sparkdart',
-    maxHealth: 12, speed: 8.4, bounty: 6, leak: 1, scale: 1.24,
+    maxHealth: 12, speed: 9.6, bounty: 6, leak: 1, scale: 1.24,
     shell: '#ff1a86', trim: '#ffd0ec',
   },
   brute: {
     tier: 'brute', name: 'Iron Brute',
-    maxHealth: 34, speed: 3.5, bounty: 10, leak: 2, scale: 1.9,
-    shell: '#cfe2ff', trim: '#1d2b45', armour: 2,
+    maxHealth: 30, speed: 4.0, bounty: 10, leak: 2, scale: 1.9,
+    shell: '#7fb2f0', trim: '#16213a', armour: 1,
     splitsInto: { tier: 'husk', count: 2 },
   },
   warden: {
     tier: 'warden', name: 'Brass Warden',
-    maxHealth: 66, speed: 2.8, bounty: 22, leak: 3, scale: 2.15,
+    maxHealth: 62, speed: 3.2, bounty: 22, leak: 3, scale: 2.15,
     shell: '#ffb61f', trim: '#39f0ff', shield: 30,
     splitsInto: { tier: 'brute', count: 2 },
   },
   colossus: {
     tier: 'colossus', name: 'Gearwood Colossus',
-    maxHealth: 700, speed: 2.0, bounty: 160, leak: 12, scale: 3.9,
-    shell: '#8b3ce0', trim: '#ff7a10', armour: 4, shield: 260, boss: true,
+    maxHealth: 720, speed: 2.3, bounty: 160, leak: 12, scale: 3.9,
+    shell: '#8b3ce0', trim: '#ff7a10', armour: 3, shield: 240, boss: true,
     splitsInto: { tier: 'warden', count: 3 },
   },
 };
+
+/** The one colour that means "shield", on any tier that carries one. */
+const SHIELD_COLOR = '#4fe8ff';
 
 /** Impact tint per element, used for the body flash. Mirrors `fx/Impacts`. */
 const KIND_FLASH: Record<DamageKind, THREE.Color> = {
@@ -165,7 +168,7 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
       parts.push({
         geo: at(new THREE.ConeGeometry(0.1, 0.42, 4), Math.cos(th) * 0.5, 0.56, Math.sin(th) * 0.5,
           Math.PI / 2, 0, -th - Math.PI / 2),
-        color: trim, emit: 0.3,
+        color: '#c93a06', emit: 0.1,
       });
     }
     // A black chassis band under the body. Every tier carries one: it is the
@@ -183,10 +186,10 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
     parts.push({ geo: at(hull, 0, 0.52, -0.12, -Math.PI / 2), color: shell });
     for (const s of [-1, 1]) {
       const fin = box(0.05, 0.42, 0.5); fin.translate(0, 0.1, 0);
-      parts.push({ geo: at(fin, s * 0.22, 0.52, 0.3, 0, 0, s * 0.5), color: trim });
+      parts.push({ geo: at(fin, s * 0.22, 0.52, 0.3, 0, 0, s * 0.5), color: shell });
     }
     // Dorsal blade.
-    parts.push({ geo: at(box(0.05, 0.34, 0.44), 0, 0.78, 0.22, 0.35), color: trim });
+    parts.push({ geo: at(box(0.05, 0.34, 0.44), 0, 0.78, 0.22, 0.35), color: '#a3005a' });
     // Rear thruster: the bright end is at the back, so the dark nose leads.
     parts.push({ geo: at(new THREE.SphereGeometry(0.19, 10, 8), 0, 0.52, 0.44), color: trim, emit: 1 });
     // Shared black chassis band, as on every other tier.
@@ -208,7 +211,7 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
     }
     // Rivets.
     for (const s2 of [-1, 1]) for (const z of [-0.24, 0.24]) {
-      parts.push({ geo: at(new THREE.SphereGeometry(0.07, 6, 5), s2 * 0.56, 1.0, z), color: '#ffffff' });
+      parts.push({ geo: at(new THREE.SphereGeometry(0.07, 6, 5), s2 * 0.56, 1.0, z), color: '#d6e8ff' });
     }
     // Legs and the shared black chassis band.
     parts.push({ geo: at(box(0.72, 0.2, 0.6), 0, 0.2, 0), color: '#0f1626' });
@@ -256,7 +259,8 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
       });
     }
     // Furnace eye.
-    parts.push({ geo: at(new THREE.SphereGeometry(0.3, 12, 10), 0, 0.9, -0.5), color: trim, emit: 1 });
+    parts.push({ geo: at(cyl(0.3, 0.34, 0.16, 6), 0, 0.92, -0.56, Math.PI / 2), color: trim, emit: 1 });
+    parts.push({ geo: at(cyl(0.42, 0.46, 0.1, 6), 0, 0.92, -0.5, Math.PI / 2), color: '#150826' });
     // Feet.
     for (const s of [-1, 1]) parts.push({ geo: at(box(0.36, 0.26, 0.5), s * 0.42, 0.13, 0), color: '#241040' });
   }
@@ -294,7 +298,7 @@ const patch = (u: EnemyUniforms) => (shader: THREE.WebGLProgramParametersWithUni
        // Floor: the board is a shadowed forest and an unlit enemy on it is a
        // dark blob. This lifts every tier's own colour out of shade without
        // touching its shading, so silhouette and hue survive the canopy.
-       totalEmissiveRadiance += vColor * 0.17;
+       totalEmissiveRadiance += vColor * 0.2;
        totalEmissiveRadiance += uFlashColor * uFlash;`,
     );
 };
@@ -303,7 +307,7 @@ function enemyMaterial(): THREE.MeshStandardMaterial {
   const u: EnemyUniforms = {
     uFlash: { value: 0 },
     uFlashColor: { value: new THREE.Color('#ffffff') },
-    uCore: { value: 2.2 },
+    uCore: { value: 1.4 },
   };
   const m = new THREE.MeshStandardMaterial({
     color: '#ffffff', vertexColors: true, roughness: 0.44, metalness: 0.5, flatShading: true,
@@ -418,7 +422,7 @@ export class Enemy {
     this.gait = 1 + ((seed * 7) % 11) * 0.06;
     this.phase = ((seed * 13) % 17) * 0.37;
     this.markerColor.set(archetype.shell);
-    this.markerRadius = archetype.scale * (archetype.boss ? 1.15 : 0.86);
+    this.markerRadius = archetype.scale * (archetype.boss ? 0.78 : 0.86);
     // Darts skim; everything else walks.
     this.hoverBase = archetype.tier === 'dart' ? 0.34 * archetype.scale : 0;
 
@@ -435,19 +439,23 @@ export class Enemy {
       if (!Enemy.shieldGeo) {
         // An octagonal band, not a smooth torus: facets catch the key light
         // and flicker as it turns, which is what says "energy" at distance.
-        const g = new THREE.TorusGeometry(0.78, 0.1, 4, 8);
+        const g = new THREE.TorusGeometry(0.62, 0.085, 4, 8);
         g.rotateX(Math.PI / 2);
         Enemy.shieldGeo = g;
       }
+      // Cyan on every tier, never the tier's own trim. "Shielded" is a rule,
+      // and a rule has to look the same wherever it appears -- the boss's
+      // shield was drawn in its own orange and simply read as more crown.
       this.shieldMesh = new THREE.Mesh(Enemy.shieldGeo, new THREE.MeshStandardMaterial({
-        color: archetype.trim,
-        emissive: new THREE.Color(archetype.trim),
+        color: SHIELD_COLOR,
+        emissive: new THREE.Color(SHIELD_COLOR),
         emissiveIntensity: 1.9,
         transparent: true, opacity: 0.78, roughness: 0.2, metalness: 0.1,
         flatShading: true, depthWrite: false,
       }));
       this.shieldMesh.scale.setScalar(archetype.scale);
-      this.shieldMesh.position.y = (archetype.boss ? 0.95 : 0.66) * archetype.scale;
+      // At the waist, not across the face.
+      this.shieldMesh.position.y = (archetype.boss ? 0.72 : 0.6) * archetype.scale;
       this.shieldMesh.renderOrder = 4;
       this.group.add(this.shieldMesh);
     }
@@ -588,7 +596,7 @@ export class Enemy {
 
     // Core brightens and beats faster as health drops: the "about to pop" tell.
     const hp = this.healthFraction;
-    this.u.uCore.value = 1.6 + (1 - hp) * 1.9 + Math.sin(elapsed * (7 + (1 - hp) * 16) + this.phase) * 0.5;
+    this.u.uCore.value = 1.05 + (1 - hp) * 1.25 + Math.sin(elapsed * (7 + (1 - hp) * 16) + this.phase) * 0.32;
   }
 
   /**
