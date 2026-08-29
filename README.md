@@ -1,97 +1,111 @@
-# Monsterfall
+# Gearwood Thicket
 
-A browser-based multiplayer monster collection + tower defense game. Original
-creatures, steampunk-fantasy hybrid Verdant-Forest setting ("Gearwood
-Thicket"). Not affiliated with or based on any existing franchise.
+A hybrid monster-collector / tower-defense game in the browser, built with
+Three.js. You place original creatures along a winding track, waves of
+clockwork enemies walk it, and your creatures level up, evolve and carry their
+progress between runs.
 
-This is the MVP described in the project design doc: a single-player,
-client-only vertical slice covering steps 1–16 of the doc's development
-priority list (map, waves, monster placement/targeting/attacks/abilities,
-damage/death, boss, victory/defeat, monster data, collection UI,
-XP/leveling, basic evolution). Multiplayer, the authoritative server, and
-persistence (steps 17+) are the next phase — see below.
-
-## Layout
+Everything you see is generated in code. There are no model files, no texture
+downloads and no image-generation service in the loop — meshes, textures,
+audio and animation are all synthesised at runtime.
 
 ```
-/client   React + TypeScript + Vite + Phaser 3 client (the whole MVP lives here)
-/shared   Cross-cutting game data & types: elements, rarity, traits, monster
-          species, enemies, abilities, waves. No client or server dependency.
-/legacy-prototype
-          The original single-file vanilla-JS tower defense prototype this
-          project started from. Kept for reference; superseded by /client.
-```
-
-`/server` (Node + TypeScript + Socket.IO, PostgreSQL persistence, the
-authoritative battle/lobby state) doesn't exist yet — see Roadmap.
-
-## Running it
-
-```
-cd client
+cd game
 npm install
 npm run dev
 ```
 
-Then open the printed `http://localhost:5173` URL. `npm run build` produces
-a production build (`npm run preview` to serve it locally); `npx tsc -b`
-type-checks the client + shared packages together.
+Then open the printed `http://127.0.0.1:5173` URL.
 
-## How to play
+## Playing
 
-1. **Play → Choose Your Team**: pick up to 6 wardens from your collection
-   (you start with one, Cogling) and start a battle.
-2. **Battle**: click a warden in the bottom tray, then click an open (non-path)
-   tile on the map to deploy it. Deployed wardens auto-attack enemies in
-   range and periodically cast their ability. Click a deployed warden to see
-   its stats, cycle its targeting mode, or fire its ultimate once the purple
-   meter fills. Waves start automatically after a short prep countdown (or
-   click "Start Now"); wave 10 ends in a boss fight.
-3. On victory you're offered a capture encounter for a randomly-rolled wild
-   species — capture chance is shown up front, based on rarity.
-4. **Collection**: view every warden you own, their level/XP/trait/ability,
-   deploy them to your team, and evolve them once they hit the required
-   level.
-5. **Codex**: track which of the 10 Gearwood Thicket species you've
-   discovered and captured.
+| Input | Action |
+|---|---|
+| Left-drag | Orbit the camera |
+| Right-drag | Pan |
+| Scroll | Zoom |
+| Click a roster card, then click the ground | Place a creature |
+| Click a placed creature | Open its inspector (upgrade / sell) |
+| `C` | Field Codex |
+| `Esc` | Cancel placement |
 
-## Design data
+On touch: one finger orbits, two fingers pinch to zoom and drag to pan, tap to
+place or select. The HUD reflows to a scrolling roster strip on narrow screens.
 
-All game balance/content lives in `/shared` as plain data, not scattered
-through UI or simulation code:
+Creatures cannot be placed on the track. Enemies that reach the end cost you
+lives; stronger tiers split into weaker ones when destroyed, so a late kill can
+still flood the lane.
 
-- `types.ts` — shared interfaces (nothing Phaser/React-specific)
-- `constants.ts` — `ELEMENT_ADVANTAGES` (centralized elemental matchups),
-  rarity scaling/capture chances, trait definitions, the XP curve
-- `monsterData.ts` — the 10 original species, each with element, rarity,
-  base stats, one active ability, one passive, and (for half of them) a
-  single-step evolution
-- `enemyData.ts` — the 3 enemy kinds (Rustling/Hullcrusher/Sprocketail) +
-  the wave-10 boss (The Foreman)
-- `abilityData.ts` — the active ability pool (fireball/freeze/chain/poison/
-  barrage-style effects), referenced by monsters
-- `waveData.ts` — the 10-wave table, boss on wave 10
+## Structure
 
-The client's simulation (`client/src/battle/`) and UI
-(`client/src/screens`, `client/src/components`) both read from this package,
-so a future server can import the exact same data for authoritative combat
-without duplicating balance numbers.
+```
+game/
+  src/
+    core/       Engine, post chain, procedural textures, camera rig, debug API
+    world/      Sky and lighting, terrain, track, ground shading, foliage
+    creatures/  Species table, procedural creature builder, rig and animation
+    combat/     Enemies, waves, projectiles, the battle loop
+    fx/         GPU particles, camera shake, hit-stop, floating numbers
+    ui/         HUD, Field Codex, tower inspector
+    meta/       XP curve, levels, evolution, persisted collection
+    main.ts     Wiring
+    showcase.ts Neutral studio scene for reviewing creature art
+  tools/
+    shoot.mjs     Deterministic screenshot harness
+    simulate.mjs  Headless gameplay simulation
+  docs/BRIEF.md   Build brief and quality bar
+```
 
-## Roadmap (not yet built)
+## How it was built
 
-Following the design doc's own priority order — client-side systems first,
-then multiplayer:
+The work was split across parallel agents, each owning a slice of the codebase
+and each running a build-and-critique loop: make a change, capture a
+screenshot, hand it to a separate critic agent with fresh context that compares
+the result blind against a real reference, fix the biggest flaw it names,
+repeat. See `.claude/skills/gauntlet-loop/`.
 
-- **Node/TypeScript/Socket.IO server** under `/server`, owning authoritative
-  battle state (damage, enemy HP, rewards, wave/victory outcomes — never
-  trusting the client)
-- **PostgreSQL persistence** for accounts, collection, codex, currency
-  (currently client-only via `localStorage`, standing in for this)
-- **Multiplayer lobby**: create/join by code, ready-up, 1–4 players
-- **Battle synchronization**: shared enemy positions/HP, monster placement,
-  damage, waves, victory/defeat across clients, with interpolation for
-  smooth movement
-- Branching evolution, eggs, a real economy sink for gold/crystals
-  (training/upgrades), and real portrait/sprite art (see
-  `client/public/monsters/README.md` — concept art was generated but
-  couldn't be pulled into this session due to network policy)
+Two tools make that loop possible, and they are the load-bearing part of this
+repo:
+
+**`tools/shoot.mjs`** drives headless Chromium and reads the WebGL backbuffer
+directly. Simulation stepping is split from rendering (`stepLogic` vs `render`)
+so a capture can fast-forward the world without paying to draw every
+intermediate frame — under software rasterisation that is the difference
+between a 4-second capture and a multi-minute one. Because the sim is advanced
+by an exact amount, two runs of the same shot differ only where the render
+actually changed.
+
+**`tools/simulate.mjs`** runs the real battle loop at speed with no rendering
+at all and asserts the game is playable: waves spawn and drain, splits fire,
+the economy moves, both win and loss trigger. Screenshots prove it looks right;
+only this proves it works.
+
+## Rendering
+
+ACES filmic tone mapping, bloom, a colour-grade pass (vignette, chromatic
+aberration, grain) and SMAA. A PMREM environment map is baked from the sky
+dome — without image-based lighting, PBR materials have no indirect light to
+sample and the whole scene reads flat no matter how good the geometry is.
+
+Ground and road are `MeshStandardMaterial`s with their albedo, roughness and
+normal replaced by a world-space procedural stack injected via
+`onBeforeCompile`, blended by slope, altitude and distance to the road rather
+than sprayed uniformly. Foliage is instanced.
+
+## Original work
+
+The creatures, world, and all art in this repository are original. The quality
+bar for creature presentation was set by comparing against real Pokémon
+official artwork, but no existing creature's design, name, or likeness is
+copied or shipped here, and no reference imagery is committed.
+
+## Agent skills
+
+`.claude/skills/` holds skills available to Claude Code in this repo.
+
+- **`gauntlet-loop`** — turns a goal into one paste-ready prompt that sets a
+  concrete quality bar, splits the work into judgeable pieces, and runs a
+  builder plus a separate harsh critic on each until the work wins a blind
+  comparison. Vendored from
+  [robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop);
+  see `.claude/skills/gauntlet-loop/ATTRIBUTION.md`.
