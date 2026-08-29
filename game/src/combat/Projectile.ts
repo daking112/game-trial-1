@@ -53,6 +53,8 @@ export class Projectile {
   private readonly from = new THREE.Vector3();
   private life = 0;
   private roll = 0;
+  /** Counts down to the next trail bead. */
+  trailClock = 0;
 
   constructor(shared: THREE.BufferGeometry) {
     this.mesh = new THREE.Mesh(
@@ -78,6 +80,7 @@ export class Projectile {
     this.travelled = 0;
     this.life = 0;
     this.roll = 0;
+    this.trailClock = 0;
     this.from.copy(origin);
     this.mesh.position.copy(origin);
     this.mesh.visible = true;
@@ -160,6 +163,9 @@ export interface ProjectileHit {
   heading: THREE.Vector3;
 }
 
+/** Seconds between trail beads on a single shot. */
+const TRAIL_INTERVAL = 0.028;
+
 /** Fixed-size pool so combat never allocates mid-frame. */
 export class ProjectilePool {
   readonly group = new THREE.Group();
@@ -182,13 +188,24 @@ export class ProjectilePool {
     return false; // pool exhausted; dropping a shot beats stuttering
   }
 
-  /** Steps every live projectile, returning the hits that landed. */
-  update(dt: number): ProjectileHit[] {
+  /**
+   * Steps every live projectile, returning the hits that landed.
+   *
+   * `onTrail` is called at a fixed cadence per live shot with the position it
+   * has just left, so the caller can lay a dotted line behind it. The cadence
+   * is per-projectile rather than per-frame so trail density does not change
+   * with frame rate or with how many shots are in the air.
+   */
+  update(dt: number, onTrail?: (at: THREE.Vector3, color: THREE.ColorRepresentation) => void): ProjectileHit[] {
     const hits: ProjectileHit[] = [];
     for (const p of this.pool) {
       if (!p.active) continue;
       const at = p.mesh.position.clone();
       const spec = p.spec!;
+      if (onTrail) {
+        p.trailClock -= dt;
+        if (p.trailClock <= 0) { p.trailClock = TRAIL_INTERVAL; onTrail(at, spec.color); }
+      }
       const enemy = p.update(dt);
       if (enemy) hits.push({ enemy, spec, at, heading: p.heading.clone() });
     }

@@ -68,7 +68,7 @@ export const WAVES: WaveDef[] = [
     brief: 'Brutes are armoured — fast little hits barely scratch them.',
     groups: [
       { tier: 'brute', count: 3, interval: 1.2, at: 0 },
-      { tier: 'husk', count: 10, interval: 0.5, at: 0.4 },
+      { tier: 'husk', count: 14, interval: 0.42, at: 0.4 },
       { tier: 'dart', count: 3, interval: 0.7, at: 3.0 },
     ],
   },
@@ -77,7 +77,7 @@ export const WAVES: WaveDef[] = [
     brief: 'A dart pack behind an iron screen.',
     groups: [
       { tier: 'brute', count: 4, interval: 1.0, at: 0 },
-      { tier: 'husk', count: 10, interval: 0.45, at: 0.5 },
+      { tier: 'husk', count: 14, interval: 0.4, at: 0.5 },
       { tier: 'dart', count: 8, interval: 0.4, at: 2.5 },
     ],
   },
@@ -87,7 +87,7 @@ export const WAVES: WaveDef[] = [
     groups: [
       { tier: 'warden', count: 2, interval: 2.2, at: 0 },
       { tier: 'brute', count: 4, interval: 0.9, at: 0.6 },
-      { tier: 'husk', count: 12, interval: 0.38, at: 1.0 },
+      { tier: 'husk', count: 16, interval: 0.34, at: 1.0 },
     ],
   },
   {
@@ -95,7 +95,7 @@ export const WAVES: WaveDef[] = [
     brief: 'Wardens break into Brutes, Brutes break into Husks.',
     groups: [
       { tier: 'warden', count: 3, interval: 1.6, at: 0 },
-      { tier: 'husk', count: 14, interval: 0.32, at: 0.5 },
+      { tier: 'husk', count: 18, interval: 0.3, at: 0.5 },
       { tier: 'dart', count: 6, interval: 0.4, at: 3.5 },
     ],
   },
@@ -104,8 +104,8 @@ export const WAVES: WaveDef[] = [
     brief: 'Armour and shields, arriving together.',
     groups: [
       { tier: 'warden', count: 3, interval: 1.4, at: 0 },
-      { tier: 'brute', count: 8, interval: 0.5, at: 0.6 },
-      { tier: 'dart', count: 8, interval: 0.32, at: 4.0 },
+      { tier: 'brute', count: 9, interval: 0.46, at: 0.6 },
+      { tier: 'dart', count: 10, interval: 0.3, at: 4.0 },
     ],
   },
   {
@@ -113,7 +113,7 @@ export const WAVES: WaveDef[] = [
     brief: 'No filler. Every one of these is worth killing early.',
     groups: [
       { tier: 'warden', count: 4, interval: 1.1, at: 0 },
-      { tier: 'brute', count: 10, interval: 0.42, at: 1.0 },
+      { tier: 'brute', count: 12, interval: 0.4, at: 1.0 },
       { tier: 'dart', count: 6, interval: 0.5, at: 4.0 },
     ],
   },
@@ -122,7 +122,7 @@ export const WAVES: WaveDef[] = [
     brief: 'Shielded, armoured, and it breaks into three Wardens.',
     groups: [
       { tier: 'warden', count: 3, interval: 1.0, at: 0 },
-      { tier: 'brute', count: 8, interval: 0.45, at: 0.5 },
+      { tier: 'brute', count: 10, interval: 0.42, at: 0.5 },
       { tier: 'dart', count: 6, interval: 0.4, at: 3.0 },
       // Late, and alone. A boss that arrives inside its own escort is a boss
       // nobody looks at.

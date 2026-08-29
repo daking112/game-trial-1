@@ -47,30 +47,30 @@ export interface EnemyArchetype {
 export const ARCHETYPES: Record<EnemyTier, EnemyArchetype> = {
   husk: {
     tier: 'husk', name: 'Cog Husk',
-    maxHealth: 10, speed: 4.9, bounty: 4, leak: 1, scale: 1.0,
-    shell: '#f2622a', trim: '#ffd24a',
+    maxHealth: 10, speed: 4.9, bounty: 4, leak: 1, scale: 1.38,
+    shell: '#ff5a12', trim: '#ffe24a',
   },
   dart: {
     tier: 'dart', name: 'Sparkdart',
-    maxHealth: 12, speed: 8.4, bounty: 6, leak: 1, scale: 0.92,
-    shell: '#ff2f92', trim: '#ffd9ee',
+    maxHealth: 12, speed: 8.4, bounty: 6, leak: 1, scale: 1.24,
+    shell: '#ff1a86', trim: '#ffd0ec',
   },
   brute: {
     tier: 'brute', name: 'Iron Brute',
-    maxHealth: 34, speed: 3.5, bounty: 10, leak: 2, scale: 1.42,
-    shell: '#9fb6d6', trim: '#25344e', armour: 2,
+    maxHealth: 34, speed: 3.5, bounty: 10, leak: 2, scale: 1.9,
+    shell: '#cfe2ff', trim: '#1d2b45', armour: 2,
     splitsInto: { tier: 'husk', count: 2 },
   },
   warden: {
     tier: 'warden', name: 'Brass Warden',
-    maxHealth: 66, speed: 2.8, bounty: 22, leak: 3, scale: 1.66,
-    shell: '#e8a72e', trim: '#4fe8ff', shield: 30,
+    maxHealth: 66, speed: 2.8, bounty: 22, leak: 3, scale: 2.15,
+    shell: '#ffb61f', trim: '#39f0ff', shield: 30,
     splitsInto: { tier: 'brute', count: 2 },
   },
   colossus: {
     tier: 'colossus', name: 'Gearwood Colossus',
-    maxHealth: 700, speed: 2.0, bounty: 160, leak: 12, scale: 3.1,
-    shell: '#6b3fa0', trim: '#ff8a2b', armour: 4, shield: 260, boss: true,
+    maxHealth: 700, speed: 2.0, bounty: 160, leak: 12, scale: 3.9,
+    shell: '#8b3ce0', trim: '#ff7a10', armour: 4, shield: 260, boss: true,
     splitsInto: { tier: 'warden', count: 3 },
   },
 };
@@ -276,6 +276,10 @@ const patch = (u: EnemyUniforms) => (shader: THREE.WebGLProgramParametersWithUni
       '#include <emissivemap_fragment>',
       `#include <emissivemap_fragment>
        totalEmissiveRadiance += vColor * vEmit * uCore;
+       // Floor: the board is a shadowed forest and an unlit enemy on it is a
+       // dark blob. This lifts every tier's own colour out of shade without
+       // touching its shading, so silhouette and hue survive the canopy.
+       totalEmissiveRadiance += vColor * 0.17;
        totalEmissiveRadiance += uFlashColor * uFlash;`,
     );
 };
@@ -309,10 +313,10 @@ export class EnemyMarkers {
   private readonly dummy = new THREE.Object3D();
 
   constructor(capacity = 96) {
-    const geo = new THREE.RingGeometry(0.46, 0.72, 22);
+    const geo = new THREE.RingGeometry(0.6, 0.95, 24);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshBasicMaterial({
-      vertexColors: false, transparent: true, opacity: 0.92,
+      vertexColors: false, transparent: true, opacity: 1.0,
       depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
@@ -329,7 +333,7 @@ export class EnemyMarkers {
       if (i >= cap) break;
       if (!e.alive) continue;
       const s = e.markerRadius;
-      this.dummy.position.set(e.group.position.x, e.groundY + 0.045, e.group.position.z);
+      this.dummy.position.set(e.group.position.x, e.groundY + 0.09, e.group.position.z);
       this.dummy.rotation.set(0, 0, 0);
       this.dummy.scale.set(s, 1, s);
       this.dummy.updateMatrix();
@@ -399,7 +403,7 @@ export class Enemy {
     this.gait = 1 + ((seed * 7) % 11) * 0.06;
     this.phase = ((seed * 13) % 17) * 0.37;
     this.markerColor.set(archetype.shell);
-    this.markerRadius = archetype.scale * (archetype.boss ? 1.45 : 1.12);
+    this.markerRadius = archetype.scale * (archetype.boss ? 1.15 : 0.86);
     // Darts skim; everything else walks.
     this.hoverBase = archetype.tier === 'dart' ? 0.34 * archetype.scale : 0;
 
@@ -450,6 +454,23 @@ export class Enemy {
 
   get healthFraction(): number {
     return Math.max(0, this.health / this.archetype.maxHealth);
+  }
+
+  /** Remaining shield as 0..1, or 0 for a tier that never had one. */
+  get shieldFraction(): number {
+    const max = this.archetype.shield ?? 0;
+    return max > 0 ? Math.max(0, this.shield / max) : 0;
+  }
+
+  /**
+   * World height just above the tallest point of the body, in world units.
+   *
+   * The anchor a UI layer should project for a health bar: it already accounts
+   * for tier scale and for the dart's hover, so a bar pinned here clears the
+   * head of a Colossus and does not float over a Husk.
+   */
+  get topY(): number {
+    return this.group.position.y + (this.archetype.boss ? 2.4 : 1.55) * this.archetype.scale;
   }
 
   takeDamage(amount: number, kind?: DamageKind): DamageResult {

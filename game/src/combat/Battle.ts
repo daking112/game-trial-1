@@ -4,7 +4,7 @@ import { Enemy, EnemyMarkers, ARCHETYPES, type EnemyTier, type DamageKind, type 
 import { WAVES, scheduleWave, type ScheduledSpawn } from './Waves';
 import { ProjectilePool, type ProjectileSpec } from './Projectile';
 import { Particles } from '../fx/Particles';
-import { playImpact, playDeath, playShieldBreak, DEATHS } from '../fx/Impacts';
+import { playImpact, playDeath, playShieldBreak, playTrail, playMuzzle, DEATHS } from '../fx/Impacts';
 
 /**
  * Minimal contract a placed creature must satisfy to act as a tower.
@@ -85,6 +85,8 @@ export class Tower {
   }
 }
 
+const _aim = new THREE.Vector3();
+
 export type BattlePhase = 'idle' | 'running' | 'won' | 'lost';
 
 /** Everything the presentation layer needs to know about one landed shot. */
@@ -152,6 +154,8 @@ export class Battle {
   private seed = 0;
   private betweenWaves = 0;
   private ownsParticles = false;
+  private readonly trail = (at: THREE.Vector3, color: THREE.ColorRepresentation) =>
+    playTrail(this.particles, at, color);
 
   constructor(
     private readonly track: Track,
@@ -306,12 +310,17 @@ export class Battle {
       if (this.projectiles.fire(origin, target, t.stats.projectile)) {
         t.cooldown = 1 / Math.max(0.05, t.stats.rate);
         t.visual.playAttack?.();
+        // Muzzle flash: the other half of making a shot traceable. Without it
+        // a projectile appears from nowhere a metre in front of the creature.
+        _aim.subVectors(target.position, origin).normalize();
+        playMuzzle(this.particles, origin, t.stats.projectile.kind, _aim);
         this.events.onFire?.(t);
       }
     }
 
-    // Projectile hits.
-    for (const hit of this.projectiles.update(dt)) {
+    // Projectile hits. The trail is laid here so every shot in the air draws
+    // a visible line from the tower that fired it to the enemy it is chasing.
+    for (const hit of this.projectiles.update(dt, this.trail)) {
       this.applyDamage(hit.enemy, hit.spec, hit.at, hit.heading);
     }
 
