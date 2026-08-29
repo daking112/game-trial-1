@@ -154,19 +154,26 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
   const parts: Part[] = [];
 
   if (tier === 'husk') {
-    // Round. The baseline everything else is read against.
-    const b = new THREE.IcosahedronGeometry(0.46, 1); b.scale(1, 0.9, 1.06);
-    parts.push({ geo: at(b, 0, 0.5, 0), color: shell });
-    // Waist gear: the steampunk tell, and it widens the silhouette.
-    parts.push({ geo: at(new THREE.TorusGeometry(0.44, 0.075, 5, 12), 0, 0.48, 0, Math.PI / 2), color: trim });
-    // Two forward horns break the circle so it is not a bare ball.
-    for (const s of [-1, 1]) {
-      parts.push({ geo: at(new THREE.ConeGeometry(0.1, 0.34, 5), s * 0.24, 0.86, -0.1, -0.5, 0, s * 0.42), color: trim });
+    // A spiked drive-wheel, not a ball. The first pass gave it a domed body
+    // and a torus at the waist and a critic read it, correctly, as a mushroom
+    // -- which is a prop that is already scattered across this map in the same
+    // colour. Angular beats round here: a radial crown of hard spikes cannot
+    // be mistaken for anything that grows.
+    parts.push({ geo: at(new THREE.OctahedronGeometry(0.5, 0), 0, 0.56, 0, 0, 0, 0), color: shell });
+    for (let i = 0; i < 6; i++) {
+      const th = (i / 6) * Math.PI * 2 + 0.25;
+      parts.push({
+        geo: at(new THREE.ConeGeometry(0.1, 0.42, 4), Math.cos(th) * 0.5, 0.56, Math.sin(th) * 0.5,
+          Math.PI / 2, 0, -th - Math.PI / 2),
+        color: trim, emit: 0.3,
+      });
     }
-    // Stub feet: contact with the road.
-    for (const s of [-1, 1]) parts.push({ geo: at(box(0.16, 0.2, 0.24), s * 0.2, 0.1, 0), color: '#3a2418' });
-    // Eye core, front and centre.
-    parts.push({ geo: at(new THREE.SphereGeometry(0.15, 10, 8), 0, 0.54, -0.36), color: trim, emit: 1 });
+    // A black chassis band under the body. Every tier carries one: it is the
+    // shared "this is a machine, not a creature" tell, and it plants the
+    // silhouette on the road.
+    parts.push({ geo: at(cyl(0.34, 0.44, 0.22, 6), 0, 0.12, 0), color: '#1c1008' });
+    // One hot eye, forward.
+    parts.push({ geo: at(new THREE.SphereGeometry(0.16, 8, 6), 0, 0.6, -0.4), color: trim, emit: 1 });
   }
 
   if (tier === 'dart') {
@@ -182,33 +189,41 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
     parts.push({ geo: at(box(0.05, 0.34, 0.44), 0, 0.78, 0.22, 0.35), color: trim });
     // Rear thruster: the bright end is at the back, so the dark nose leads.
     parts.push({ geo: at(new THREE.SphereGeometry(0.19, 10, 8), 0, 0.52, 0.44), color: trim, emit: 1 });
-    parts.push({ geo: at(cyl(0.06, 0.14, 0.5, 6), 0, 0.16, 0.1, 0, 0, 0), color: '#4a1030' });
+    // Shared black chassis band, as on every other tier.
+    parts.push({ geo: at(box(0.34, 0.16, 0.86), 0, 0.14, 0.06), color: '#2a0620' });
   }
 
   if (tier === 'brute') {
-    // Box. Wide, flat-topped, plainly heavier than anything round.
-    parts.push({ geo: at(box(0.86, 0.66, 0.74), 0, 0.62, 0), color: shell });
-    // Shoulder plates in the dark trim: the armour read.
-    for (const s of [-1, 1]) parts.push({ geo: at(box(0.22, 0.5, 0.66), s * 0.53, 0.7, 0.02), color: trim });
-    // Angled brow slab over the face.
-    parts.push({ geo: at(box(0.8, 0.26, 0.3), 0, 0.86, -0.3, -0.42), color: trim });
-    // Rivets. Four is enough to say "bolted plate" at this size.
-    for (const s of [-1, 1]) for (const z of [-0.22, 0.22]) {
-      parts.push({ geo: at(new THREE.SphereGeometry(0.06, 6, 5), s * 0.44, 0.92, z), color: '#e9f2ff' });
+    // Box, but a *contrasty* box. Pass one made the whole chassis near-white
+    // and it read as a crate prop; the mass is dark now and only the armour
+    // plates are bright, which is what says "armoured" at fifteen pixels.
+    parts.push({ geo: at(box(0.8, 0.62, 0.72), 0, 0.66, 0), color: '#33415e' });
+    // Bright shoulder slabs: the armour read, and the widest thing on it.
+    for (const s2 of [-1, 1]) parts.push({ geo: at(box(0.3, 0.46, 0.7), s2 * 0.56, 0.76, 0.02), color: shell });
+    // Angled brow slab, bright, over a dark face.
+    parts.push({ geo: at(box(0.78, 0.24, 0.32), 0, 0.94, -0.28, -0.42), color: shell });
+    // Two forward tusks break the box from every angle.
+    for (const s2 of [-1, 1]) {
+      parts.push({ geo: at(new THREE.ConeGeometry(0.09, 0.42, 4), s2 * 0.3, 0.5, -0.44, -1.35, 0, 0), color: shell });
     }
-    // Legs.
-    for (const s of [-1, 1]) for (const z of [-0.22, 0.24]) {
-      parts.push({ geo: at(box(0.18, 0.3, 0.2), s * 0.3, 0.15, z), color: '#1a2438' });
+    // Rivets.
+    for (const s2 of [-1, 1]) for (const z of [-0.24, 0.24]) {
+      parts.push({ geo: at(new THREE.SphereGeometry(0.07, 6, 5), s2 * 0.56, 1.0, z), color: '#ffffff' });
+    }
+    // Legs and the shared black chassis band.
+    parts.push({ geo: at(box(0.72, 0.2, 0.6), 0, 0.2, 0), color: '#0f1626' });
+    for (const s2 of [-1, 1]) for (const z of [-0.22, 0.24]) {
+      parts.push({ geo: at(box(0.2, 0.24, 0.22), s2 * 0.32, 0.12, z), color: '#0f1626' });
     }
     // Visor slot rather than an eye: a machine, not a creature.
-    parts.push({ geo: at(box(0.52, 0.1, 0.06), 0, 0.62, -0.4), color: '#ff4d3d', emit: 1 });
+    parts.push({ geo: at(box(0.5, 0.12, 0.06), 0, 0.66, -0.38), color: '#ff3b2e', emit: 1 });
   }
 
   if (tier === 'warden') {
     // Tower. Tall and narrow, the opposite of the brute at the same distance.
     parts.push({ geo: at(cyl(0.34, 0.42, 1.0, 8), 0, 0.62, 0), color: shell });
     parts.push({ geo: at(cyl(0.46, 0.46, 0.14, 8), 0, 1.14, 0), color: '#7a4d12' });
-    parts.push({ geo: at(cyl(0.5, 0.5, 0.12, 8), 0, 0.2, 0), color: '#7a4d12' });
+    parts.push({ geo: at(cyl(0.5, 0.56, 0.24, 8), 0, 0.14, 0), color: '#241605' });
     // Crown spikes.
     for (let i = 0; i < 6; i++) {
       const th = (i / 6) * Math.PI * 2;
@@ -225,7 +240,7 @@ function buildTier(tier: EnemyTier, a: EnemyArchetype): THREE.BufferGeometry {
     // Crowned. Every other tier is one mass; the boss is a stack of three.
     const core = new THREE.DodecahedronGeometry(0.62, 0);
     parts.push({ geo: at(core, 0, 0.86, 0), color: shell });
-    parts.push({ geo: at(cyl(0.62, 0.8, 0.4, 8), 0, 0.24, 0), color: '#3d2260' });
+    parts.push({ geo: at(cyl(0.62, 0.86, 0.42, 8), 0, 0.23, 0), color: '#150826' });
     // Pauldrons.
     for (const s of [-1, 1]) {
       parts.push({ geo: at(new THREE.IcosahedronGeometry(0.34, 0), s * 0.72, 1.0, 0), color: '#3d2260' });
@@ -313,10 +328,10 @@ export class EnemyMarkers {
   private readonly dummy = new THREE.Object3D();
 
   constructor(capacity = 96) {
-    const geo = new THREE.RingGeometry(0.6, 0.95, 24);
+    const geo = new THREE.RingGeometry(0.74, 0.95, 24);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshBasicMaterial({
-      vertexColors: false, transparent: true, opacity: 1.0,
+      vertexColors: false, transparent: true, opacity: 0.8,
       depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);

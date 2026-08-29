@@ -108,7 +108,7 @@ export class Projectile {
     const to = _to.copy(this.target.position).setY(this.target.centreY);
     const dir = _dir.subVectors(to, this.mesh.position);
     const dist = dir.length();
-    const stepLen = this.spec.speed * dt;
+    const stepLen = this.spec.speed * SPEED_SCALE * dt;
 
     if (dist <= Math.max(stepLen, 0.35)) {
       if (dist > 1e-4) this.heading.copy(dir).divideScalar(dist);
@@ -152,6 +152,17 @@ export class Projectile {
   }
 }
 
+/**
+ * Global slowdown on every shot.
+ *
+ * Shots used to cross the gap between a tower and its target inside two
+ * frames, so a still frame of a live firefight contained no projectiles at
+ * all and nothing tied a tower to what it was killing. Slowing them makes the
+ * shot itself a readable object, and it also sharpens the existing rule that
+ * a fast enemy can outrun a slow weapon.
+ */
+const SPEED_SCALE = 0.62;
+
 const _to = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 
@@ -164,7 +175,7 @@ export interface ProjectileHit {
 }
 
 /** Seconds between trail beads on a single shot. */
-const TRAIL_INTERVAL = 0.028;
+const TRAIL_INTERVAL = 0.022;
 
 /** Fixed-size pool so combat never allocates mid-frame. */
 export class ProjectilePool {

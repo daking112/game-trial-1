@@ -170,7 +170,7 @@ export function playShieldBreak(particles: Particles, at: THREE.Vector3, scale =
  * particle: one per shot per beat, no spread, no gravity, short life.
  */
 export function playTrail(particles: Particles, at: THREE.Vector3, color: THREE.ColorRepresentation) {
-  particles.burst(at, { count: 1, color, speed: [0, 0.35], life: [0.22, 0.3], size: 6.5, gravity: 0 });
+  particles.burst(at, { count: 1, color, speed: [0, 0.3], life: [0.4, 0.52], size: 8.5, gravity: 0 });
 }
 
 /** Muzzle flash at a tower, tinted by what it shoots. */
