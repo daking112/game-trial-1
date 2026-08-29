@@ -12,18 +12,32 @@ export class Feel {
   private timeScale = 1;
   private stopTimer = 0;
   private seed = 1234;
+  /** Field-of-view kick, in degrees, decaying back to the camera's own value. */
+  private punchFov = 0;
+  private baseFov = 0;
 
   private readonly offset = new THREE.Vector3();
 
-  /** Add shake. `amount` is 0..1; it accumulates and clamps. */
+  /**
+   * Add shake. `amount` is 0..1; it accumulates and clamps.
+   *
+   * A shake always drags a short lens punch with it. Translation alone reads
+   * as a bumped tripod; the frame briefly widening is what reads as force
+   * arriving at the camera, and it costs nothing to ride along here so every
+   * caller gets it without having to remember a second call.
+   */
   shake(amount: number) {
     this.trauma = Math.min(1, this.trauma + amount);
+    this.punchFov = Math.min(2.2, this.punchFov + amount * 2.6);
+    // Anything genuinely heavy also earns a sliver of hit-stop. Below the
+    // threshold this does nothing, so ordinary chip damage stays fluid.
+    if (amount >= 0.2) this.hitStop(0.03 + amount * 0.05, 0.22);
   }
 
   /** Briefly slow time for impact weight. */
   hitStop(seconds: number, scale = 0.12) {
     this.stopTimer = Math.max(this.stopTimer, seconds);
-    this.timeScale = scale;
+    this.timeScale = Math.min(this.timeScale, scale);
   }
 
   private rand() {
@@ -37,6 +51,19 @@ export class Feel {
     if (this.stopTimer > 0) {
       this.stopTimer -= dt;
       if (this.stopTimer <= 0) this.timeScale = 1;
+    }
+
+    // The rig may legitimately change the camera's fov between frames (a shot
+    // pose, a zoom), so the resting value is re-read whenever no punch is in
+    // flight rather than latched once at construction.
+    if (this.punchFov <= 0.001) this.baseFov = camera.fov;
+    if (this.punchFov > 0) {
+      this.punchFov = Math.max(0, this.punchFov - dt * 14);
+      const fov = this.baseFov + this.punchFov;
+      if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+      if (this.punchFov === 0 && camera.fov !== this.baseFov) {
+        camera.fov = this.baseFov; camera.updateProjectionMatrix();
+      }
     }
 
     if (this.trauma > 0) {
